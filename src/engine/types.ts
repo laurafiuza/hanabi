@@ -72,3 +72,20 @@ export const MAX_INFO_TOKENS = 8;
 export const INITIAL_FUSE_TOKENS = 1;
 export const HAND_SIZE = 4; // 4 cards for 4-5 players
 export const NUM_PLAYERS = 5;
+
+// Clockwise seating: You (bottom) → Right → Top Right → Top Left → Left
+export const TURN_ORDER = [0, 4, 2, 1, 3];
+
+export function nextPlayerInTurnOrder(current: number): number {
+  const pos = TURN_ORDER.indexOf(current);
+  return TURN_ORDER[(pos + 1) % TURN_ORDER.length];
+}
+
+export function getPlayersAfterInTurnOrder(playerIndex: number): number[] {
+  const result: number[] = [];
+  const pos = TURN_ORDER.indexOf(playerIndex);
+  for (let offset = 1; offset < TURN_ORDER.length; offset++) {
+    result.push(TURN_ORDER[(pos + offset) % TURN_ORDER.length]);
+  }
+  return result;
+}

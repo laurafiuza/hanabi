@@ -1,7 +1,7 @@
 import type { GameState, Action, Card, Rank } from './types';
-import { SUITS } from './types';
+import { SUITS, getPlayersAfterInTurnOrder } from './types';
 import { getValidActions } from './game';
-import { chooseRLAction } from './rl_model';
+import { chooseMCTSAction } from './mcts';
 
 const RANK_COPIES: Record<number, number> = { 1: 3, 2: 2, 3: 2, 4: 2, 5: 1 };
 
@@ -15,11 +15,8 @@ function isCritical(card: Card, state: GameState): boolean {
 
 // Check if a player has any unhinted critical cards they might discard
 function findCriticalHint(state: GameState, playerIndex: number): Action | null {
-  const numPlayers = state.players.length;
-
   // Prioritize the next player in turn order — they'll act soonest
-  for (let offset = 1; offset < numPlayers; offset++) {
-    const targetIdx = (playerIndex + offset) % numPlayers;
+  for (const targetIdx of getPlayersAfterInTurnOrder(playerIndex)) {
     const target = state.players[targetIdx];
 
     for (let i = 0; i < target.hand.length; i++) {
@@ -53,10 +50,14 @@ function findCriticalHint(state: GameState, playerIndex: number): Action | null 
 }
 
 export function chooseBotAction(state: GameState, playerIndex: number): Action {
-  // Try RL model first, fall back to heuristic
-  const rlAction = chooseRLAction(state, playerIndex);
-  if (rlAction) return rlAction;
+  try {
+    return chooseMCTSAction(state, playerIndex);
+  } catch {
+    return heuristicBotAction(state, playerIndex);
+  }
+}
 
+export function heuristicBotAction(state: GameState, playerIndex: number): Action {
   const actions = getValidActions(state, playerIndex);
   const me = state.players[playerIndex];
 
@@ -137,10 +138,7 @@ export function chooseBotAction(state: GameState, playerIndex: number): Action {
 }
 
 function findPlayableHint(state: GameState, playerIndex: number): Action | null {
-  const numPlayers = state.players.length;
-
-  for (let offset = 1; offset < numPlayers; offset++) {
-    const targetIdx = (playerIndex + offset) % numPlayers;
+  for (const targetIdx of getPlayersAfterInTurnOrder(playerIndex)) {
     const target = state.players[targetIdx];
 
     for (let i = 0; i < target.hand.length; i++) {
@@ -171,10 +169,7 @@ function findPlayableHint(state: GameState, playerIndex: number): Action | null 
 }
 
 function findAnyUsefulHint(state: GameState, playerIndex: number): Action | null {
-  const numPlayers = state.players.length;
-
-  for (let offset = 1; offset < numPlayers; offset++) {
-    const targetIdx = (playerIndex + offset) % numPlayers;
+  for (const targetIdx of getPlayersAfterInTurnOrder(playerIndex)) {
     const target = state.players[targetIdx];
 
     // Hint about 5s the target doesn't know about

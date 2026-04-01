@@ -1,5 +1,5 @@
 import type { GameState, Action, Card, Player, Suit, HistoryEntry } from './types';
-import { SUITS, HAND_SIZE, NUM_PLAYERS, MAX_INFO_TOKENS, INITIAL_FUSE_TOKENS } from './types';
+import { SUITS, HAND_SIZE, NUM_PLAYERS, MAX_INFO_TOKENS, INITIAL_FUSE_TOKENS, nextPlayerInTurnOrder } from './types';
 import { createDeck, shuffleDeck } from './deck';
 import { createEmptyHintInfo, applyHint, removeCardFromHintInfo, addCardToHintInfo } from './hints';
 import { isValidAction } from './validation';
@@ -8,12 +8,13 @@ export function createGame(): GameState {
   let deck = shuffleDeck(createDeck());
   const players: Player[] = [];
 
+  const PLAYER_NAMES = ['You', 'Top Left', 'Top Right', 'Left', 'Right'];
   for (let i = 0; i < NUM_PLAYERS; i++) {
     const hand = deck.slice(0, HAND_SIZE);
     deck = deck.slice(HAND_SIZE);
     players.push({
       id: i,
-      name: i === 0 ? 'You' : `Bot ${i}`,
+      name: PLAYER_NAMES[i],
       isHuman: i === 0,
       hand,
       hintInfo: createEmptyHintInfo(HAND_SIZE),
@@ -214,8 +215,8 @@ export function applyAction(state: GameState, action: Action): GameState {
     }
   }
 
-  // Advance turn
-  newState.currentPlayerIndex = (state.currentPlayerIndex + 1) % NUM_PLAYERS;
+  // Advance turn (clockwise)
+  newState.currentPlayerIndex = nextPlayerInTurnOrder(state.currentPlayerIndex);
   newState.turnNumber = state.turnNumber + 1;
 
   return newState;

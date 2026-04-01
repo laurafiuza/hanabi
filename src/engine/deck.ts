@@ -1,7 +1,7 @@
 import type { Card, Rank } from './types';
 import { SUITS } from './types';
 
-const RANK_COUNTS: Record<Rank, number> = {
+export const RANK_COUNTS: Record<Rank, number> = {
   1: 3,
   2: 2,
   3: 2,

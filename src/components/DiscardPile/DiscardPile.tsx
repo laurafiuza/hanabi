@@ -15,7 +15,7 @@ function suitSymbol(suit: string): string {
 }
 
 export function DiscardPile({ cards }: DiscardPileProps) {
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(true);
 
   return (
     <div className={styles.container}>

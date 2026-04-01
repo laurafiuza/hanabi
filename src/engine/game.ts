@@ -8,7 +8,7 @@ export function createGame(): GameState {
   let deck = shuffleDeck(createDeck());
   const players: Player[] = [];
 
-  const PLAYER_NAMES = ['You', 'Top Left', 'Top Right', 'Left', 'Right'];
+  const PLAYER_NAMES = ['You', 'Top Right', 'Bottom Left', 'Top Left', 'Bottom Right'];
   for (let i = 0; i < NUM_PLAYERS; i++) {
     const hand = deck.slice(0, HAND_SIZE);
     deck = deck.slice(HAND_SIZE);

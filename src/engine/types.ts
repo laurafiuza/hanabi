@@ -73,8 +73,8 @@ export const INITIAL_FUSE_TOKENS = 1;
 export const HAND_SIZE = 4; // 4 cards for 4-5 players
 export const NUM_PLAYERS = 5;
 
-// Clockwise seating: You (bottom) → Right → Top Right → Top Left → Left
-export const TURN_ORDER = [0, 4, 2, 1, 3];
+// Clockwise seating: You → Bottom Left → Top Left → Top Right → Bottom Right
+export const TURN_ORDER = [0, 2, 3, 1, 4];
 
 export function nextPlayerInTurnOrder(current: number): number {
   const pos = TURN_ORDER.indexOf(current);

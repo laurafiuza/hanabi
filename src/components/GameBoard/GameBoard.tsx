@@ -23,8 +23,8 @@ export function GameBoard({ state, doAction, startGame }: GameBoardProps) {
   const [viewingKnowledgeOf, setViewingKnowledgeOf] = useState<number | null>(null);
 
   const humanPlayer = state.players[0];
-  // Display bots in visual clockwise order: Left, Top Left, Top Right, Right
-  const botPlayers = [3, 1, 2, 4].map(i => state.players[i]);
+  // Display bots left-to-right: Bottom Left, Top Left, Top Right, Bottom Right
+  const botPlayers = [2, 3, 1, 4].map(i => state.players[i]);
   const isHumanTurn = state.currentPlayerIndex === 0 && state.status === 'playing';
   const score = getScore(state.playArea);
 

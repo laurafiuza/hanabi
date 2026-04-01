@@ -48,7 +48,7 @@ export function useGame() {
       if (action) {
         dispatch(action);
       }
-    }, 3000);
+    }, 6000);
 
     return () => clearTimeout(timeout);
   }, [state.currentPlayerIndex, state.status]);

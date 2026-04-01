@@ -40,26 +40,28 @@ export function heuristicBotAction(state: GameState, playerIndex: number): Actio
   const actions = getValidActions(state, playerIndex);
   const me = state.players[playerIndex];
 
-  // 1. Play a card where we know both suit and rank, and it's the next needed
-  for (let i = 0; i < me.hand.length; i++) {
-    const knownSuit = me.hintInfo.knownSuits[i];
-    const knownRank = me.hintInfo.knownRanks[i];
-    if (knownSuit && knownRank && isCardPlayable(knownSuit, knownRank, state)) {
-      return { type: 'PLAY_CARD', playerIndex, cardIndex: i };
-    }
-  }
-
-  // 2. Play a card where we know the rank and it's playable in every suit that still needs it
-  //    (e.g., know it's a 1 and no 1s played yet → safe to play)
-  for (let i = 0; i < me.hand.length; i++) {
-    const knownRank = me.hintInfo.knownRanks[i];
-    const knownSuit = me.hintInfo.knownSuits[i];
-    if (knownRank && !knownSuit) {
-      const allSuitsReady = SUITS.every(s => state.playArea[s] >= knownRank || state.playArea[s] === knownRank - 1);
-      const someNeedIt = SUITS.some(s => state.playArea[s] === knownRank - 1);
-      if (allSuitsReady && someNeedIt) {
-        return { type: 'PLAY_CARD', playerIndex, cardIndex: i };
+  // 1-2. Find all known-safe plays, pick the lowest rank to open up fronts early
+  {
+    let bestIdx = -1;
+    let bestRank = Infinity;
+    for (let i = 0; i < me.hand.length; i++) {
+      const knownSuit = me.hintInfo.knownSuits[i];
+      const knownRank = me.hintInfo.knownRanks[i];
+      // Known suit+rank and playable
+      if (knownSuit && knownRank && isCardPlayable(knownSuit, knownRank, state)) {
+        if (knownRank < bestRank) { bestRank = knownRank; bestIdx = i; }
       }
+      // Known rank only, universally playable
+      if (knownRank && !knownSuit) {
+        const allSuitsReady = SUITS.every(s => state.playArea[s] >= knownRank || state.playArea[s] === knownRank - 1);
+        const someNeedIt = SUITS.some(s => state.playArea[s] === knownRank - 1);
+        if (allSuitsReady && someNeedIt && knownRank < bestRank) {
+          bestRank = knownRank; bestIdx = i;
+        }
+      }
+    }
+    if (bestIdx >= 0) {
+      return { type: 'PLAY_CARD', playerIndex, cardIndex: bestIdx };
     }
   }
 

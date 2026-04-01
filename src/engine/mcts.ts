@@ -11,7 +11,7 @@ import { RANK_COUNTS } from './deck';
 import { applyAction, getValidActions, getScore } from './game';
 import { heuristicBotAction } from './ai';
 
-const TIME_BUDGET_MS = 2500;
+const TIME_BUDGET_MS = 5000;
 const EXPLORATION_C = 1.0;
 
 // ---------------------------------------------------------------------------

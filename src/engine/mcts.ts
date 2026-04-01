@@ -11,7 +11,7 @@ import { RANK_COUNTS } from './deck';
 import { applyAction, getValidActions, getScore } from './game';
 import { heuristicBotAction } from './ai';
 
-const TIME_BUDGET_MS = 1200;
+const TIME_BUDGET_MS = 2500;
 const EXPLORATION_C = 1.0;
 
 // ---------------------------------------------------------------------------
@@ -180,19 +180,103 @@ function sampleDeterminization(state: GameState, playerIndex: number): GameState
 }
 
 // ---------------------------------------------------------------------------
-// Fast path: skip MCTS when heuristic has a certain play
+// Fast path: skip MCTS when the heuristic answer is obviously correct
 // ---------------------------------------------------------------------------
 
-function hasCertainPlay(state: GameState, playerIndex: number): boolean {
+function hasObviousPlay(state: GameState, playerIndex: number): boolean {
   const me = state.players[playerIndex];
   for (let i = 0; i < me.hand.length; i++) {
     const knownSuit = me.hintInfo.knownSuits[i];
     const knownRank = me.hintInfo.knownRanks[i];
+    // Known suit+rank and playable
     if (knownSuit && knownRank && state.playArea[knownSuit] === knownRank - 1) {
       return true;
     }
+    // Known rank, universally playable (e.g., known 1 when no 1s played)
+    if (knownRank && !knownSuit) {
+      const allReady = SUITS.every(s => state.playArea[s] >= knownRank || state.playArea[s] === knownRank - 1);
+      const someNeed = SUITS.some(s => state.playArea[s] === knownRank - 1);
+      if (allReady && someNeed) return true;
+    }
   }
   return false;
+}
+
+// ---------------------------------------------------------------------------
+// Action pruning: remove provably bad actions from MCTS search space
+// ---------------------------------------------------------------------------
+
+const RANK_COPIES: Record<number, number> = { 1: 3, 2: 2, 3: 2, 4: 2, 5: 1 };
+
+function pruneActions(actions: Action[], state: GameState, playerIndex: number): Action[] {
+  const me = state.players[playerIndex];
+
+  const dominated = new Set<string>();
+
+  for (const a of actions) {
+    const key = actionKey(a);
+
+    if (a.type === 'DISCARD') {
+      const knownRank = me.hintInfo.knownRanks[a.cardIndex];
+      const knownSuit = me.hintInfo.knownSuits[a.cardIndex];
+
+      // Never discard a known 5
+      if (knownRank === 5) { dominated.add(key); continue; }
+
+      // Never discard a card known to be critical (last copy, still needed)
+      if (knownSuit && knownRank) {
+        if (state.playArea[knownSuit] < knownRank) {
+          const discarded = state.discardPile.filter(
+            c => c.suit === knownSuit && c.rank === knownRank
+          ).length;
+          if (discarded >= RANK_COPIES[knownRank] - 1) {
+            dominated.add(key); continue;
+          }
+        }
+      }
+    }
+
+    if (a.type === 'PLAY_CARD') {
+      const knownRank = me.hintInfo.knownRanks[a.cardIndex];
+      const knownSuit = me.hintInfo.knownSuits[a.cardIndex];
+
+      // Never play a card known to be unplayable
+      if (knownSuit && knownRank && state.playArea[knownSuit] !== knownRank - 1) {
+        dominated.add(key); continue;
+      }
+
+      // Never play a card with known rank that can't be playable in any suit
+      if (knownRank && !knownSuit) {
+        const anyPlayable = SUITS.some(s => state.playArea[s] === knownRank - 1);
+        if (!anyPlayable) { dominated.add(key); continue; }
+      }
+    }
+
+    if (a.type === 'GIVE_HINT') {
+      // Don't hint about a rank/suit where every matching card in target's hand
+      // is already fully known to them
+      const target = state.players[a.targetPlayerIndex];
+      const hint = a.hint;
+      let anyNewInfo = false;
+      for (let i = 0; i < target.hand.length; i++) {
+        const card = target.hand[i];
+        const matches = hint.kind === 'suit'
+          ? card.suit === hint.suit
+          : card.rank === hint.rank;
+        if (matches) {
+          const alreadyKnown = hint.kind === 'suit'
+            ? target.hintInfo.knownSuits[i] === hint.suit
+            : target.hintInfo.knownRanks[i] === hint.rank;
+          if (!alreadyKnown) { anyNewInfo = true; break; }
+        }
+      }
+      if (!anyNewInfo) { dominated.add(key); continue; }
+    }
+  }
+
+  const filtered = actions.filter(a => !dominated.has(actionKey(a)));
+  // Safety: never prune all actions
+  return filtered.length > 0 ? filtered : actions;
 }
 
 // ---------------------------------------------------------------------------
@@ -207,22 +291,28 @@ function uctValue(child: MCTSNode, parentVisits: number): number {
   );
 }
 
-function treeSelect(
+function treeSelectPruned(
   root: MCTSNode,
   state: GameState,
-): { node: MCTSNode; state: GameState } {
+  prunedRootActions: Action[],
+  _rootPlayer: number,
+): { node: MCTSNode; state: GameState; isRoot: boolean } {
   let node = root;
   let simState = state;
+  let isRoot = true;
 
   while (simState.status === 'playing') {
-    const actions = getValidActions(simState, simState.currentPlayerIndex);
+    // At root, use pruned actions; deeper nodes use full valid actions
+    const actions = isRoot
+      ? prunedRootActions.filter(a => getValidActions(simState, simState.currentPlayerIndex).some(
+          va => actionKey(va) === actionKey(a)))
+      : getValidActions(simState, simState.currentPlayerIndex);
+
     if (actions.length === 0) break;
 
-    // Find untried actions in this determinization
     const untriedActions = actions.filter(a => !node.children.has(actionKey(a)));
     if (untriedActions.length > 0) break; // expand phase will handle
 
-    // All actions tried — select best via UCT among those legal here
     let bestChild: MCTSNode | null = null;
     let bestValue = -Infinity;
 
@@ -241,22 +331,28 @@ function treeSelect(
 
     node = bestChild;
     simState = applyAction(simState, bestChild.action!);
+    isRoot = false;
   }
 
-  return { node, state: simState };
+  return { node, state: simState, isRoot };
 }
 
 // ---------------------------------------------------------------------------
-// Expand: add one untried child
+// Expand: add one untried child (pruned at root level)
 // ---------------------------------------------------------------------------
 
-function expand(
+function expandPruned(
   node: MCTSNode,
   state: GameState,
+  prunedActions: Action[] | null,
+  _rootPlayer: number,
 ): { node: MCTSNode; state: GameState } {
   if (state.status !== 'playing') return { node, state };
 
-  const actions = getValidActions(state, state.currentPlayerIndex);
+  const allActions = getValidActions(state, state.currentPlayerIndex);
+  const actions = prunedActions
+    ? prunedActions.filter(a => allActions.some(va => actionKey(va) === actionKey(a)))
+    : allActions;
   const untriedActions = actions.filter(a => !node.children.has(actionKey(a)));
 
   if (untriedActions.length === 0) return { node, state };
@@ -298,9 +394,18 @@ function backpropagate(node: MCTSNode | null, score: number): void {
 // ---------------------------------------------------------------------------
 
 export function chooseMCTSAction(state: GameState, playerIndex: number): Action {
-  // Fast path: if we have a guaranteed safe play, just do it
-  if (hasCertainPlay(state, playerIndex)) {
+  // Fast path: obvious plays don't need search
+  if (hasObviousPlay(state, playerIndex)) {
     return heuristicBotAction(state, playerIndex);
+  }
+
+  // Pre-compute pruned action set for the root player
+  const allActions = getValidActions(state, playerIndex);
+  const prunedActions = pruneActions(allActions, state, playerIndex);
+
+  // If only one action survives pruning, just do it
+  if (prunedActions.length === 1) {
+    return prunedActions[0];
   }
 
   const root = new MCTSNode(null, null);
@@ -312,11 +417,11 @@ export function chooseMCTSAction(state: GameState, playerIndex: number): Action 
     const det = sampleDeterminization(state, playerIndex);
     if (!det) continue; // rejection — retry
 
-    // 2. Select
-    const selected = treeSelect(root, det);
+    // 2. Select (using pruned actions at root level)
+    const selected = treeSelectPruned(root, det, prunedActions, playerIndex);
 
-    // 3. Expand
-    const expanded = expand(selected.node, selected.state);
+    // 3. Expand (using pruned actions at root level)
+    const expanded = expandPruned(selected.node, selected.state, selected.isRoot ? prunedActions : null, playerIndex);
 
     // 4. Rollout
     const score = rollout(expanded.state);
@@ -339,7 +444,6 @@ export function chooseMCTSAction(state: GameState, playerIndex: number): Action 
   }
 
   if (!bestAction) {
-    // Fallback if no simulations completed (shouldn't happen)
     return heuristicBotAction(state, playerIndex);
   }
 

@@ -38,7 +38,7 @@ def create_empty_hint_info(size):
     }
 
 
-def create_game():
+def create_game(fuse_tokens=None):
     deck = shuffle_deck(create_deck())
     players = []
     for i in range(NUM_PLAYERS):
@@ -57,7 +57,7 @@ def create_game():
         'play_area': [0] * 5,  # indexed by suit_idx, value = highest rank played
         'discard_pile': [],
         'info_tokens': MAX_INFO_TOKENS,
-        'fuse_tokens': INITIAL_FUSE_TOKENS,
+        'fuse_tokens': fuse_tokens if fuse_tokens is not None else INITIAL_FUSE_TOKENS,
         'current_player': 0,
         'turns_remaining': None,
         'status': 'playing',

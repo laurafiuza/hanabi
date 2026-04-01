@@ -1,37 +1,51 @@
 """
 REINFORCE with baseline training loop for Hanabi bot.
 Phase 1: Behavioral cloning from heuristic bot (warm start).
-Phase 2: REINFORCE fine-tuning via self-play.
+Phase 2: REINFORCE fine-tuning with curriculum on fuse tokens (3→2→1).
+
+Key improvements over v1:
+- Curriculum: train with 3 fuse tokens first, tighten to 1
+- Greedy teammates: only the current player samples, others act greedily
+- Per-step discounted returns instead of flat episode return
+- Baseline tracks raw score, not shaped reward
+- Lower entropy after BC (0.001)
 """
-import sys
 import os
 import time
 import json
 import numpy as np
 
-from engine import create_game, apply_action, get_valid_actions, get_score
+from engine import create_game, apply_action, get_score
 from featurize import observe, action_to_index, index_to_action, get_action_mask, OBS_SIZE, ACTION_SIZE
 from network import init_weights, forward, sample_action, compute_grad, AdamOptimizer
 from heuristic_bot import choose_heuristic_action
 
 # Training hyperparameters
 BATCH_SIZE = 64
-BC_EPOCHS = 300       # Behavioral cloning epochs
-RL_EPOCHS = 1200      # REINFORCE epochs
+BC_EPOCHS = 300
 LR = 3e-4
-ENTROPY_COEFF = 0.01
+ENTROPY_COEFF = 0.001  # Lower after BC — we already have a good init
 BASELINE_DECAY = 0.99
 CHECKPOINT_EVERY = 200
 LOG_EVERY = 50
-def play_one_game(weights):
+GAMMA = 0.99  # Per-step discount
+
+# Curriculum: (fuse_tokens, num_rl_epochs)
+CURRICULUM = [
+    (3, 600),
+    (2, 600),
+    (1, 600),
+]
+
+
+def play_one_game(weights, fuse_tokens=1, greedy_teammates=True):
     """
-    Play a full game with all players using the policy network.
-    Returns (trajectory, reward, score).
-    trajectory = list of (obs, action_idx, mask, cache) per step.
-    Reward = per-step shaped: +2 for successful play, -1 for failed play, 0 otherwise.
-    Plus final score bonus.
+    Play a full game. Only one player per step samples stochastically;
+    all others act greedily (highest-prob valid action).
+    Returns (trajectory, step_rewards, score).
+    trajectory entries are only for the stochastically-acting steps.
     """
-    state = create_game()
+    state = create_game(fuse_tokens=fuse_tokens)
     trajectory = []
     step_rewards = []
 
@@ -44,34 +58,56 @@ def play_one_game(weights):
             break
 
         probs, cache = forward(obs, weights, mask)
-        action_idx = sample_action(probs)
-        trajectory.append((obs, action_idx, mask, cache))
 
+        if greedy_teammates:
+            # Only one random player per game step samples; rest act greedily
+            # The "training player" rotates: use step count mod to pick
+            is_training_player = (len(trajectory) + len(step_rewards)) % 5 == player_idx
+            if is_training_player:
+                action_idx = sample_action(probs)
+            else:
+                action_idx = int(np.argmax(probs))
+        else:
+            action_idx = sample_action(probs)
+
+        # Always record trajectory (we need gradients for all players since
+        # they share weights), but mark whether this was a sampled action
         old_score = get_score(state)
         action = index_to_action(action_idx, player_idx)
         apply_action(state, action)
         new_score = get_score(state)
 
-        # Per-step reward shaping
+        # Per-step reward
         if new_score > old_score:
-            step_rewards.append(2.0)  # successful play
+            r = 2.0
         elif action['type'] == 'play' and new_score == old_score:
-            step_rewards.append(-1.0)  # failed play (wrong card)
+            r = -1.0
         elif action['type'] == 'discard':
-            # Reward safe discards (card already surpassed by play area)
             card = state['discard_pile'][-1] if state['discard_pile'] else None
             if card and state['play_area'][card['suit']] >= card['rank']:
-                step_rewards.append(0.5)  # good discard — card was useless
+                r = 0.5
             else:
-                step_rewards.append(0.0)
+                r = 0.0
         else:
-            step_rewards.append(0.0)
+            r = 0.0
+
+        trajectory.append((obs, action_idx, mask, cache))
+        step_rewards.append(r)
 
     score = get_score(state)
-    # Total reward = sum of step rewards + final score bonus
-    total_reward = sum(step_rewards) + score
+    return trajectory, step_rewards, score
 
-    return trajectory, total_reward, score
+
+def compute_discounted_returns(step_rewards, final_score, gamma=GAMMA):
+    """Compute per-step discounted returns: R_t = r_t + gamma*r_{t+1} + ... + score_bonus."""
+    T = len(step_rewards)
+    returns = np.zeros(T, dtype=np.float32)
+    # The final "bonus" is the game score, added to last step
+    running = float(final_score)
+    for t in reversed(range(T)):
+        running = step_rewards[t] + gamma * running
+        returns[t] = running
+    return returns
 
 
 def collect_bc_data(num_games):
@@ -91,21 +127,19 @@ def collect_bc_data(num_games):
 
 
 def bc_grad(weights, obs, target_idx, mask):
-    """Supervised cross-entropy gradient: maximize log(pi(target|obs))."""
+    """Supervised cross-entropy gradient."""
     probs, cache = forward(obs, weights, mask)
-    # Gradient = -(one_hot - probs), same as REINFORCE with advantage=1
     return compute_grad(weights, cache, target_idx, advantage=1.0, entropy_coeff=0.0)
 
 
 def behavioral_cloning(weights, optimizer, bc_data, num_epochs, batch_size=256):
-    """Pre-train weights to mimic heuristic bot via supervised learning."""
+    """Pre-train weights to mimic heuristic bot."""
     print(f"\n=== Phase 1: Behavioral Cloning ({num_epochs} epochs, {len(bc_data)} samples) ===")
     indices = np.arange(len(bc_data))
 
     for epoch in range(num_epochs):
         np.random.shuffle(indices)
         total_loss = 0.0
-        num_batches = 0
 
         for start in range(0, len(bc_data), batch_size):
             batch_idx = indices[start:start + batch_size]
@@ -116,29 +150,24 @@ def behavioral_cloning(weights, optimizer, bc_data, num_epochs, batch_size=256):
                 grad = bc_grad(weights, obs, target_idx, mask)
                 for k in total_grad:
                     total_grad[k] += grad[k]
-
-                # Track accuracy
                 probs, _ = forward(obs, weights, mask)
                 total_loss -= np.log(probs[target_idx] + 1e-10)
 
             for k in total_grad:
                 total_grad[k] /= len(batch_idx)
 
-            # Gradient clipping
             grad_norm = np.sqrt(sum(np.sum(g ** 2) for g in total_grad.values()))
             if grad_norm > 1.0:
                 for k in total_grad:
                     total_grad[k] *= 1.0 / grad_norm
 
             weights = optimizer.step(weights, total_grad)
-            num_batches += 1
 
         if (epoch + 1) % 50 == 0:
             avg_loss = total_loss / len(bc_data)
-            # Evaluate
             scores = []
             for _ in range(100):
-                traj, reward, score = play_one_game(weights)
+                _, _, score = play_one_game(weights, fuse_tokens=1, greedy_teammates=False)
                 scores.append(score)
             print(f"  BC epoch {epoch+1:4d} | loss={avg_loss:.3f} | eval_score={np.mean(scores):.2f}")
 
@@ -154,7 +183,8 @@ def train():
     start_time = time.time()
 
     print(f"Network: {OBS_SIZE} -> 256 -> 128 -> {ACTION_SIZE}")
-    print(f"LR={LR}, entropy_coeff={ENTROPY_COEFF}")
+    print(f"LR={LR}, entropy_coeff={ENTROPY_COEFF}, gamma={GAMMA}")
+    print(f"Curriculum: {[(f, e) for f, e in CURRICULUM]}")
 
     # Phase 1: Behavioral cloning
     print("Collecting heuristic bot demonstrations...")
@@ -163,63 +193,84 @@ def train():
     weights = behavioral_cloning(weights, optimizer, bc_data, BC_EPOCHS)
     save_weights(weights, 'checkpoints/weights_after_bc.json')
 
-    # Phase 2: REINFORCE fine-tuning
-    print(f"\n=== Phase 2: REINFORCE Fine-tuning ({RL_EPOCHS} epochs x {BATCH_SIZE} games) ===")
-    baseline = 0.0
-    best_avg = -float('inf')
+    # Phase 2: REINFORCE with curriculum
+    for stage_idx, (fuse_tokens, rl_epochs) in enumerate(CURRICULUM):
+        print(f"\n=== Phase 2.{stage_idx+1}: REINFORCE (fuse={fuse_tokens}, {rl_epochs} epochs x {BATCH_SIZE} games) ===")
+        baseline = 0.0  # Reset baseline for each curriculum stage
+        best_avg = -float('inf')
 
-    for epoch in range(RL_EPOCHS):
-        batch_trajectories = []
-        batch_rewards = []
-        batch_scores = []
+        for epoch in range(rl_epochs):
+            batch_trajectories = []
+            batch_scores = []
 
-        for _ in range(BATCH_SIZE):
-            traj, reward, score = play_one_game(weights)
-            batch_trajectories.append((traj, reward))
-            batch_rewards.append(reward)
-            batch_scores.append(score)
+            for _ in range(BATCH_SIZE):
+                traj, step_rews, score = play_one_game(weights, fuse_tokens=fuse_tokens, greedy_teammates=True)
+                returns = compute_discounted_returns(step_rews, score)
+                batch_trajectories.append((traj, returns))
+                batch_scores.append(score)
 
-        avg_reward = np.mean(batch_rewards)
-        avg_score = np.mean(batch_scores)
-        baseline = BASELINE_DECAY * baseline + (1 - BASELINE_DECAY) * avg_reward
+            avg_score = np.mean(batch_scores)
+            # Baseline tracks raw score
+            baseline = BASELINE_DECAY * baseline + (1 - BASELINE_DECAY) * avg_score
 
-        total_grad = {k: np.zeros_like(v) for k, v in weights.items()}
-        total_steps = 0
+            total_grad = {k: np.zeros_like(v) for k, v in weights.items()}
+            total_steps = 0
 
-        for traj, reward in batch_trajectories:
-            advantage = reward - baseline
-            for obs, action_idx, mask, cache in traj:
-                grad = compute_grad(weights, cache, action_idx, advantage, ENTROPY_COEFF)
+            for traj, returns in batch_trajectories:
+                for t, (obs, action_idx, mask, cache) in enumerate(traj):
+                    advantage = returns[t] - baseline
+                    grad = compute_grad(weights, cache, action_idx, advantage, ENTROPY_COEFF)
+                    for k in total_grad:
+                        total_grad[k] += grad[k]
+                    total_steps += 1
+
+            if total_steps > 0:
                 for k in total_grad:
-                    total_grad[k] += grad[k]
-                total_steps += 1
+                    total_grad[k] /= total_steps
 
-        if total_steps > 0:
-            for k in total_grad:
-                total_grad[k] /= total_steps
+            grad_norm = np.sqrt(sum(np.sum(g ** 2) for g in total_grad.values()))
+            if grad_norm > 1.0:
+                for k in total_grad:
+                    total_grad[k] *= 1.0 / grad_norm
 
-        grad_norm = np.sqrt(sum(np.sum(g ** 2) for g in total_grad.values()))
-        if grad_norm > 1.0:
-            for k in total_grad:
-                total_grad[k] *= 1.0 / grad_norm
+            weights = optimizer.step(weights, total_grad)
 
-        weights = optimizer.step(weights, total_grad)
+            if (epoch + 1) % LOG_EVERY == 0:
+                elapsed = time.time() - start_time
+                print(f"  epoch {epoch+1:5d} | fuse={fuse_tokens} | avg_score={avg_score:.2f} | "
+                      f"baseline={baseline:.2f} | grad_norm={grad_norm:.4f} | "
+                      f"time={elapsed:.0f}s")
+                if avg_score > best_avg:
+                    best_avg = avg_score
 
-        if (epoch + 1) % LOG_EVERY == 0:
-            elapsed = time.time() - start_time
-            print(f"  RL epoch {epoch+1:5d} | avg_score={avg_score:.2f} | "
-                  f"baseline={baseline:.2f} | grad_norm={grad_norm:.4f} | "
-                  f"time={elapsed:.0f}s")
-            if avg_score > best_avg:
-                best_avg = avg_score
+            if (epoch + 1) % CHECKPOINT_EVERY == 0:
+                save_weights(weights, f'checkpoints/weights_fuse{fuse_tokens}_epoch{epoch+1}.json')
 
-        if (epoch + 1) % CHECKPOINT_EVERY == 0:
-            save_weights(weights, f'checkpoints/weights_rl_{epoch+1}.json')
+        save_weights(weights, f'checkpoints/weights_after_fuse{fuse_tokens}.json')
+        print(f"  Stage done. Best avg score (fuse={fuse_tokens}): {best_avg:.2f}")
+
+    # Final eval with fuse=1 (production setting)
+    print("\n=== Final Evaluation (fuse=1, greedy, 500 games) ===")
+    final_scores = []
+    for _ in range(500):
+        state = create_game(fuse_tokens=1)
+        while state['status'] == 'playing':
+            player_idx = state['current_player']
+            obs = observe(state, player_idx)
+            mask = get_action_mask(state, player_idx)
+            if not mask.any():
+                break
+            probs, _ = forward(obs, weights, mask)
+            action_idx = int(np.argmax(probs))  # greedy
+            action = index_to_action(action_idx, player_idx)
+            apply_action(state, action)
+        final_scores.append(get_score(state))
+    print(f"  Greedy RL bot (fuse=1): avg={np.mean(final_scores):.2f}, "
+          f"median={np.median(final_scores):.0f}, max={max(final_scores)}")
 
     save_weights(weights, 'checkpoints/weights_final.json')
     print("-" * 60)
-    print(f"Training complete. Best avg score: {best_avg:.2f}")
-    print(f"Total time: {time.time() - start_time:.0f}s")
+    print(f"Training complete. Total time: {time.time() - start_time:.0f}s")
 
     return weights
 

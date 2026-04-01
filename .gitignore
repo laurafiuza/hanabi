@@ -12,6 +12,11 @@ dist
 dist-ssr
 *.local
 
+# Training
+training/.venv
+training/checkpoints
+training/__pycache__
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

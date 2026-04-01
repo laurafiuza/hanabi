@@ -1,6 +1,7 @@
 import type { GameState, Action, Card, Rank } from './types';
 import { SUITS } from './types';
 import { getValidActions } from './game';
+import { chooseRLAction } from './rl_model';
 
 const RANK_COPIES: Record<number, number> = { 1: 3, 2: 2, 3: 2, 4: 2, 5: 1 };
 
@@ -52,6 +53,10 @@ function findCriticalHint(state: GameState, playerIndex: number): Action | null 
 }
 
 export function chooseBotAction(state: GameState, playerIndex: number): Action {
+  // Try RL model first, fall back to heuristic
+  const rlAction = chooseRLAction(state, playerIndex);
+  if (rlAction) return rlAction;
+
   const actions = getValidActions(state, playerIndex);
   const me = state.players[playerIndex];
 

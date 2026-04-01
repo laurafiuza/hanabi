@@ -1,0 +1,27 @@
+.area {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+}
+
+.stack {
+  width: 64px;
+  height: 90px;
+  border: 2px solid;
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: #1a1a2a;
+}
+
+.symbol {
+  font-size: 20px;
+}
+
+.value {
+  font-size: 28px;
+  font-weight: bold;
+  margin-top: 4px;
+}

@@ -1,0 +1,61 @@
+.bar {
+  display: flex;
+  gap: 24px;
+  align-items: center;
+  justify-content: center;
+  padding: 12px 16px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 8px;
+}
+
+.group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.label {
+  font-size: 12px;
+  color: #888;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.tokens {
+  display: flex;
+  gap: 3px;
+}
+
+.dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  transition: background 0.2s;
+}
+
+.active {
+  background: #42a5f5;
+}
+
+.spent {
+  background: #333;
+}
+
+.fuse {
+  font-size: 16px;
+  transition: opacity 0.2s;
+}
+
+.fuseActive {
+  opacity: 1;
+}
+
+.fuseSpent {
+  opacity: 0.2;
+}
+
+.number {
+  font-size: 16px;
+  font-weight: bold;
+  color: #ddd;
+}

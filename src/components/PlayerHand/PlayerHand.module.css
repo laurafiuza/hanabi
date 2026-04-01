@@ -1,0 +1,49 @@
+.hand {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.active {
+  background: rgba(255, 255, 255, 0.08);
+  outline: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+.nameRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.name {
+  font-size: 13px;
+  color: #aaa;
+  font-weight: 500;
+}
+
+.knowledgeBtn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 14px;
+  padding: 0 2px;
+  opacity: 0.5;
+  transition: opacity 0.15s;
+}
+
+.knowledgeBtn:hover {
+  opacity: 1;
+}
+
+.turnIndicator {
+  color: #ffd700;
+}
+
+.cards {
+  display: flex;
+  gap: 6px;
+}

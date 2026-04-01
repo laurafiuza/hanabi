@@ -1,0 +1,79 @@
+.layout {
+  display: flex;
+  gap: 16px;
+  padding: 20px;
+  max-width: 1100px;
+  margin: 0 auto;
+  justify-content: center;
+}
+
+.board {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  flex: 1;
+  max-width: 800px;
+}
+
+.sidebar {
+  flex-shrink: 0;
+}
+
+.lastAction {
+  font-size: 13px;
+  color: #aaa;
+  text-align: center;
+  min-height: 20px;
+  padding: 4px 12px;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 4px;
+}
+
+.botHands {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.humanSection {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  width: 100%;
+}
+
+.actions {
+  display: flex;
+  gap: 10px;
+}
+
+.actionBtn {
+  padding: 8px 20px;
+  border: 1px solid #555;
+  border-radius: 6px;
+  background: #2a2a3a;
+  color: #ddd;
+  cursor: pointer;
+  font-size: 14px;
+  transition: background 0.15s;
+}
+
+.actionBtn:hover:not(:disabled) {
+  background: #3a3a5a;
+}
+
+.actionBtn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.waiting {
+  color: #888;
+  font-size: 14px;
+  font-style: italic;
+}

@@ -65,6 +65,7 @@ export interface GameState {
   lastActionResult: LastActionResult | null;
   history: HistoryEntry[];
   turnNumber: number;
+  gameOverReason: string | null;
 }
 
 export const MAX_INFO_TOKENS = 8;

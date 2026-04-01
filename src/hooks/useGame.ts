@@ -23,6 +23,7 @@ const INITIAL_STATE: GameState = {
   lastActionResult: null,
   history: [],
   turnNumber: 1,
+  gameOverReason: null,
 };
 
 export function useGame() {

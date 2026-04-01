@@ -3,10 +3,11 @@ import styles from './GameOverScreen.module.css';
 interface GameOverScreenProps {
   status: string;
   score: number;
+  reason: string | null;
   onNewGame: () => void;
 }
 
-export function GameOverScreen({ status, score, onNewGame }: GameOverScreenProps) {
+export function GameOverScreen({ status, score, reason, onNewGame }: GameOverScreenProps) {
   let title = 'Game Over';
   let subtitle = '';
 
@@ -15,7 +16,7 @@ export function GameOverScreen({ status, score, onNewGame }: GameOverScreenProps
     subtitle = 'All fireworks completed!';
   } else if (status === 'lost') {
     title = 'Boom!';
-    subtitle = 'The fuse ran out...';
+    subtitle = reason ?? 'The fuse ran out...';
   } else {
     title = 'Game Over';
     subtitle = 'The deck ran out.';

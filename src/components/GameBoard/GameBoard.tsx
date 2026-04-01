@@ -146,6 +146,7 @@ export function GameBoard({ state, doAction, startGame }: GameBoardProps) {
         <GameOverScreen
           status={state.status}
           score={score}
+          reason={state.gameOverReason}
           onNewGame={startGame}
         />
       )}

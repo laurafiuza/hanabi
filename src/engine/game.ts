@@ -38,7 +38,27 @@ export function createGame(): GameState {
     lastActionResult: null,
     history: [],
     turnNumber: 1,
+    gameOverReason: null,
   };
+}
+
+const RANK_COPIES: Record<number, number> = { 1: 3, 2: 2, 3: 2, 4: 2, 5: 1 };
+
+function checkUnwinnable(state: GameState): string | null {
+  for (const suit of SUITS) {
+    const needed = state.playArea[suit] + 1;
+    if (needed > 5) continue; // suit already complete
+
+    // For each rank still needed in this suit, check if all copies are in discard
+    for (let rank = needed; rank <= 5; rank++) {
+      const totalCopies = RANK_COPIES[rank];
+      const discarded = state.discardPile.filter(c => c.suit === suit && c.rank === rank).length;
+      if (discarded >= totalCopies) {
+        return `All ${suit} ${rank}s have been discarded — ${suit} can never be completed`;
+      }
+    }
+  }
+  return null;
 }
 
 export function getScore(playArea: Record<Suit, number>): number {
@@ -110,8 +130,20 @@ export function applyAction(state: GameState, action: Action): GameState {
       // Check fuse loss
       if (newState.fuseTokens <= 0) {
         newState.status = 'lost';
+        newState.gameOverReason = 'The fuse ran out...';
         newState.turnNumber = state.turnNumber + 1;
         return newState;
+      }
+
+      // Check if failed play made game unwinnable
+      if (!success) {
+        const reason = checkUnwinnable(newState);
+        if (reason) {
+          newState.status = 'lost';
+          newState.gameOverReason = reason;
+          newState.turnNumber = state.turnNumber + 1;
+          return newState;
+        }
       }
 
       // Check win
@@ -144,6 +176,15 @@ export function applyAction(state: GameState, action: Action): GameState {
       newState.deck = deck;
       newState.lastActionResult = { action, cardPlayed: card };
       newState.history.push(makeHistoryEntry(state, actingPlayer.name, `discarded ${card.suit} ${card.rank}`));
+
+      // Check if discard made game unwinnable
+      const reason = checkUnwinnable(newState);
+      if (reason) {
+        newState.status = 'lost';
+        newState.gameOverReason = reason;
+        newState.turnNumber = state.turnNumber + 1;
+        return newState;
+      }
       break;
     }
 

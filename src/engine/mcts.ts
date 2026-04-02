@@ -469,5 +469,10 @@ export function chooseMCTSAction(state: GameState, playerIndex: number): Action 
     return heuristicBotAction(state, playerIndex);
   }
 
+  // Safety: verify the chosen action is still valid in the real state
+  if (!allActions.some(a => actionKey(a) === actionKey(bestAction!))) {
+    return heuristicBotAction(state, playerIndex);
+  }
+
   return bestAction;
 }

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import type { GameState, Action, HintValue } from '../../engine/types';
 import { getScore } from '../../engine/game';
 import { PlayerHand } from '../PlayerHand/PlayerHand';
@@ -116,7 +116,7 @@ export function GameBoard({ state, doAction, startGame }: GameBoardProps) {
           )}
 
           {!isHumanTurn && state.status === 'playing' && (
-            <div className={styles.waiting}>Waiting for {state.players[state.currentPlayerIndex]?.name}...</div>
+            <ThinkingIndicator playerName={state.players[state.currentPlayerIndex]?.name} />
           )}
         </div>
 
@@ -151,6 +151,26 @@ export function GameBoard({ state, doAction, startGame }: GameBoardProps) {
           onNewGame={startGame}
         />
       )}
+    </div>
+  );
+}
+
+function ThinkingIndicator({ playerName }: { playerName: string }) {
+  const [elapsed, setElapsed] = useState(0);
+  const startRef = useRef(Date.now());
+
+  useEffect(() => {
+    startRef.current = Date.now();
+    setElapsed(0);
+    const interval = setInterval(() => {
+      setElapsed(Math.floor((Date.now() - startRef.current) / 1000));
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [playerName]);
+
+  return (
+    <div className={styles.waiting}>
+      {playerName} thinking{elapsed > 0 ? ` (${elapsed}s)` : ''}...
     </div>
   );
 }

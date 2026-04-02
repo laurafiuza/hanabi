@@ -131,7 +131,7 @@ export function applyAction(state: GameState, action: Action): GameState {
       // Check fuse loss
       if (newState.fuseTokens <= 0) {
         newState.status = 'lost';
-        newState.gameOverReason = 'The fuse ran out...';
+        newState.gameOverReason = `${actingPlayer.name} played ${card.suit} ${card.rank} but ${card.suit} needed a ${expectedRank}`;
         newState.turnNumber = state.turnNumber + 1;
         return newState;
       }
@@ -240,22 +240,28 @@ export function getValidActions(state: GameState, playerIndex: number): Action[]
       if (t === playerIndex) continue;
       const target = state.players[t];
 
-      // Suit hints
+      // Suit hints (only if at least one matching card doesn't already know the suit)
       const suitsInHand = new Set(target.hand.map(c => c.suit));
       for (const suit of suitsInHand) {
-        actions.push({
-          type: 'GIVE_HINT', playerIndex, targetPlayerIndex: t,
-          hint: { kind: 'suit', suit },
-        });
+        const conveysNew = target.hand.some((c, i) => c.suit === suit && target.hintInfo.knownSuits[i] !== suit);
+        if (conveysNew) {
+          actions.push({
+            type: 'GIVE_HINT', playerIndex, targetPlayerIndex: t,
+            hint: { kind: 'suit', suit },
+          });
+        }
       }
 
-      // Rank hints
+      // Rank hints (only if at least one matching card doesn't already know the rank)
       const ranksInHand = new Set(target.hand.map(c => c.rank));
       for (const rank of ranksInHand) {
-        actions.push({
-          type: 'GIVE_HINT', playerIndex, targetPlayerIndex: t,
-          hint: { kind: 'rank', rank },
-        });
+        const conveysNew = target.hand.some((c, i) => c.rank === rank && target.hintInfo.knownRanks[i] !== rank);
+        if (conveysNew) {
+          actions.push({
+            type: 'GIVE_HINT', playerIndex, targetPlayerIndex: t,
+            hint: { kind: 'rank', rank },
+          });
+        }
       }
     }
   }

@@ -24,7 +24,15 @@ export function isValidAction(state: GameState, action: Action): boolean {
           ? card.suit === action.hint.suit
           : card.rank === action.hint.rank
       );
-      return matches;
+      if (!matches) return false;
+      // Hint must convey new information to at least one matching card
+      const conveysNew = target.hand.some((card, i) => {
+        if (action.hint.kind === 'suit') {
+          return card.suit === action.hint.suit && target.hintInfo.knownSuits[i] !== action.hint.suit;
+        }
+        return card.rank === action.hint.rank && target.hintInfo.knownRanks[i] !== action.hint.rank;
+      });
+      return conveysNew;
     }
 
     default:

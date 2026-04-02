@@ -51,9 +51,9 @@ function findUselessDiscard(state: GameState, playerIndex: number): number {
   return -1;
 }
 
-export function chooseBotAction(state: GameState, playerIndex: number): Action {
+export async function chooseBotAction(state: GameState, playerIndex: number): Promise<Action> {
   try {
-    return chooseMCTSAction(state, playerIndex);
+    return await chooseMCTSAction(state, playerIndex);
   } catch {
     return heuristicBotAction(state, playerIndex);
   }

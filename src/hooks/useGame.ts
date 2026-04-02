@@ -43,14 +43,16 @@ export function useGame() {
     const currentPlayer = state.players[state.currentPlayerIndex];
     if (!currentPlayer || currentPlayer.isHuman) return;
 
-    const timeout = setTimeout(() => {
-      const action = chooseBotAction(state, state.currentPlayerIndex);
-      if (action) {
+    let cancelled = false;
+
+    // Start MCTS immediately — it yields to the event loop internally
+    chooseBotAction(state, state.currentPlayerIndex).then(action => {
+      if (!cancelled && action) {
         dispatch(action);
       }
-    }, 6000);
+    });
 
-    return () => clearTimeout(timeout);
+    return () => { cancelled = true; };
   }, [state.currentPlayerIndex, state.status]);
 
   return { state, doAction, startGame };

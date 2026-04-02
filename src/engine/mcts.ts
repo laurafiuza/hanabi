@@ -415,7 +415,13 @@ function backpropagate(node: MCTSNode | null, score: number): void {
 // Main entry point
 // ---------------------------------------------------------------------------
 
-export function chooseMCTSAction(state: GameState, playerIndex: number): Action {
+const YIELD_INTERVAL_MS = 50; // yield to event loop every 50ms for UI responsiveness
+
+function yieldToEventLoop(): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, 0));
+}
+
+export async function chooseMCTSAction(state: GameState, playerIndex: number): Promise<Action> {
   // Fast path: obvious plays don't need search
   if (hasObviousPlay(state, playerIndex)) {
     return heuristicBotAction(state, playerIndex);
@@ -433,8 +439,15 @@ export function chooseMCTSAction(state: GameState, playerIndex: number): Action 
   const root = new MCTSNode(null, null);
   const deadline = performance.now() + TIME_BUDGET_MS;
   let simCount = 0;
+  let lastYield = performance.now();
 
   while (performance.now() < deadline) {
+    // Yield to event loop periodically so UI stays responsive
+    if (performance.now() - lastYield > YIELD_INTERVAL_MS) {
+      await yieldToEventLoop();
+      lastYield = performance.now();
+    }
+
     // 1. Determinize
     const det = sampleDeterminization(state, playerIndex);
     if (!det) continue; // rejection — retry

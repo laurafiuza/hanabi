@@ -267,6 +267,11 @@ function pruneActions(actions: Action[], state: GameState, playerIndex: number):
         const anyPlayable = SUITS.some(s => state.playArea[s] === knownRank - 1);
         if (!anyPlayable) { dominated.add(key); continue; }
       }
+
+      // Don't play a card with no rank info (pure gamble) — unless endgame
+      if (!knownRank && state.turnsRemaining === null) {
+        dominated.add(key); continue;
+      }
     }
 
     if (a.type === 'GIVE_HINT') {

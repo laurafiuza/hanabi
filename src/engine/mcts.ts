@@ -223,6 +223,18 @@ function pruneActions(actions: Action[], state: GameState, playerIndex: number):
       // Never discard a known 5
       if (knownRank === 5) { dominated.add(key); continue; }
 
+      // Never discard a known-playable card
+      if (knownSuit && knownRank && state.playArea[knownSuit] === knownRank - 1) {
+        dominated.add(key); continue;
+      }
+
+      // Never discard a universally-playable rank-only card
+      if (knownRank && !knownSuit) {
+        const allReady = SUITS.every(s => state.playArea[s] >= knownRank || state.playArea[s] === knownRank - 1);
+        const someNeed = SUITS.some(s => state.playArea[s] === knownRank - 1);
+        if (allReady && someNeed) { dominated.add(key); continue; }
+      }
+
       // Never discard a card known to be critical (last copy, still needed)
       if (knownSuit && knownRank) {
         if (state.playArea[knownSuit] < knownRank) {
@@ -240,7 +252,12 @@ function pruneActions(actions: Action[], state: GameState, playerIndex: number):
       const knownRank = me.hintInfo.knownRanks[a.cardIndex];
       const knownSuit = me.hintInfo.knownSuits[a.cardIndex];
 
-      // Never play a card known to be unplayable
+      // Never play a card known to be useless (already played)
+      if (knownSuit && knownRank && state.playArea[knownSuit] >= knownRank) {
+        dominated.add(key); continue;
+      }
+
+      // Never play a card known to be unplayable (wrong rank for its suit)
       if (knownSuit && knownRank && state.playArea[knownSuit] !== knownRank - 1) {
         dominated.add(key); continue;
       }

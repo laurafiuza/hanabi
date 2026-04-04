@@ -21,6 +21,7 @@ export interface Card {
 export interface HintInfo {
   knownSuits: (Suit | null)[];
   knownRanks: (Rank | null)[];
+  cardAges: number[]; // turns since card was drawn or last hinted
 }
 
 export interface Player {

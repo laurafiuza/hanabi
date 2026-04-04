@@ -44,9 +44,11 @@ export function useGame() {
     if (!currentPlayer || currentPlayer.isHuman) return;
 
     let cancelled = false;
+    const minDelay = new Promise(resolve => setTimeout(resolve, 2000));
 
     // Start MCTS immediately — it yields to the event loop internally
-    chooseBotAction(state, state.currentPlayerIndex).then(action => {
+    // But always wait at least 2s so the human can follow along
+    Promise.all([chooseBotAction(state, state.currentPlayerIndex), minDelay]).then(([action]) => {
       if (!cancelled && action) {
         dispatch(action);
       }

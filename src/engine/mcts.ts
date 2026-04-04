@@ -62,6 +62,7 @@ function cloneGameState(state: GameState): GameState {
       hintInfo: {
         knownSuits: [...p.hintInfo.knownSuits],
         knownRanks: [...p.hintInfo.knownRanks],
+        cardAges: [...p.hintInfo.cardAges],
       },
     })),
     deck: [...state.deck],
@@ -252,25 +253,26 @@ function pruneActions(actions: Action[], state: GameState, playerIndex: number):
       const knownRank = me.hintInfo.knownRanks[a.cardIndex];
       const knownSuit = me.hintInfo.knownSuits[a.cardIndex];
 
-      // Never play a card known to be useless (already played)
-      if (knownSuit && knownRank && state.playArea[knownSuit] >= knownRank) {
-        dominated.add(key); continue;
-      }
-
-      // Never play a card known to be unplayable (wrong rank for its suit)
-      if (knownSuit && knownRank && state.playArea[knownSuit] !== knownRank - 1) {
-        dominated.add(key); continue;
-      }
-
-      // Never play a card with known rank that can't be playable in any suit
-      if (knownRank && !knownSuit) {
-        const anyPlayable = SUITS.some(s => state.playArea[s] === knownRank - 1);
-        if (!anyPlayable) { dominated.add(key); continue; }
-      }
-
-      // Don't play a card with no rank info (pure gamble) — unless endgame
-      if (!knownRank && state.turnsRemaining === null) {
-        dominated.add(key); continue;
+      if (state.turnsRemaining !== null) {
+        // Endgame: only prune provably bad plays
+        if (knownSuit && knownRank && state.playArea[knownSuit] >= knownRank) {
+          dominated.add(key); continue;
+        }
+        if (knownSuit && knownRank && state.playArea[knownSuit] !== knownRank - 1) {
+          dominated.add(key); continue;
+        }
+        if (knownRank && !knownSuit) {
+          const anyPlayable = SUITS.some(s => state.playArea[s] === knownRank - 1);
+          if (!anyPlayable) { dominated.add(key); continue; }
+        }
+      } else {
+        // Not endgame: only allow plays KNOWN to be safe
+        const isKnownPlayable =
+          (knownSuit && knownRank && state.playArea[knownSuit] === knownRank - 1) ||
+          (knownRank && !knownSuit &&
+            SUITS.every(s => state.playArea[s] >= knownRank || state.playArea[s] === knownRank - 1) &&
+            SUITS.some(s => state.playArea[s] === knownRank - 1));
+        if (!isKnownPlayable) { dominated.add(key); continue; }
       }
     }
 

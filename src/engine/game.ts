@@ -215,6 +215,15 @@ export function applyAction(state: GameState, action: Action): GameState {
     }
   }
 
+  // Age all cards in all players' hands
+  newState.players = newState.players.map(p => ({
+    ...p,
+    hintInfo: {
+      ...p.hintInfo,
+      cardAges: p.hintInfo.cardAges.map(a => a + 1),
+    },
+  }));
+
   // Advance turn (clockwise)
   newState.currentPlayerIndex = nextPlayerInTurnOrder(state.currentPlayerIndex);
   newState.turnNumber = state.turnNumber + 1;

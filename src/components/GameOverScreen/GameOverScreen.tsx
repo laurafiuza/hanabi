@@ -23,14 +23,11 @@ export function GameOverScreen({ status, score, reason, onNewGame }: GameOverScr
   }
 
   return (
-    <div className={styles.overlay}>
-      <div className={styles.modal}>
-        <h2 className={styles.title}>{title}</h2>
-        <p className={styles.subtitle}>{subtitle}</p>
-        <div className={styles.score}>
-          <span className={styles.scoreLabel}>Final Score</span>
-          <span className={styles.scoreValue}>{score}/25</span>
-        </div>
+    <div className={styles.banner}>
+      <div className={styles.bannerContent}>
+        <span className={styles.title}>{title}</span>
+        <span className={styles.subtitle}>{subtitle}</span>
+        <span className={styles.score}>{score}/25</span>
         <button className={styles.btn} onClick={onNewGame}>New Game</button>
       </div>
     </div>

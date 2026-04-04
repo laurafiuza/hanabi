@@ -41,8 +41,13 @@ export function HintSelector({ players, currentPlayerIndex, onGiveHint, onCancel
   }
 
   const target = players[targetIndex];
-  const suitsInHand = [...new Set(target.hand.map(c => c.suit))];
-  const ranksInHand = [...new Set(target.hand.map(c => c.rank))].sort((a, b) => a - b);
+  // Only show hints that would convey new information
+  const suitsInHand = [...new Set(target.hand.map(c => c.suit))].filter(suit =>
+    target.hand.some((c, i) => c.suit === suit && target.hintInfo.knownSuits[i] !== suit)
+  );
+  const ranksInHand = [...new Set(target.hand.map(c => c.rank))].sort((a, b) => a - b).filter(rank =>
+    target.hand.some((c, i) => c.rank === rank && target.hintInfo.knownRanks[i] !== rank)
+  );
 
   return (
     <div className={styles.overlay}>

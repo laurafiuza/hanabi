@@ -95,16 +95,10 @@ export function heuristicBotAction(state: GameState, playerIndex: number): Actio
     }
   }
 
-  // 3. URGENT: Hint about critical cards another player might discard
+  // 3. URGENT: Complete partial info on critical cards, then hint new critical cards
   if (state.infoTokens > 0) {
     const criticalHint = findCriticalHint(state, playerIndex);
     if (criticalHint) return criticalHint;
-  }
-
-  // 4. Hint about 5s — they're unique, always worth protecting early
-  if (state.infoTokens > 0) {
-    const fiveHint = findFiveHint(state, playerIndex);
-    if (fiveHint) return fiveHint;
   }
 
   // 5. Hint about an immediately playable card in another player's hand
@@ -127,28 +121,42 @@ export function heuristicBotAction(state: GameState, playerIndex: number): Actio
     if (anyHint) return anyHint;
   }
 
-  // 8. Discard the oldest card with no hint info
+  // 8. Discard the oldest unhinted card (highest cardAge, no hint info)
   //    NEVER discard a known 5 — they're irreplaceable
-  for (let i = 0; i < me.hand.length; i++) {
-    const knownSuit = me.hintInfo.knownSuits[i];
-    const knownRank = me.hintInfo.knownRanks[i];
-    if (!knownSuit && !knownRank) {
-      return { type: 'DISCARD', playerIndex, cardIndex: i };
+  //    Unhinted cards that have sat around longest are least likely to be important
+  {
+    let bestIdx = -1;
+    let bestAge = -1;
+    for (let i = 0; i < me.hand.length; i++) {
+      const knownSuit = me.hintInfo.knownSuits[i];
+      const knownRank = me.hintInfo.knownRanks[i];
+      if (!knownSuit && !knownRank && me.hintInfo.cardAges[i] > bestAge) {
+        bestAge = me.hintInfo.cardAges[i];
+        bestIdx = i;
+      }
+    }
+    if (bestIdx >= 0) {
+      return { type: 'DISCARD', playerIndex, cardIndex: bestIdx };
     }
   }
 
   // 9. Discard a card we know the least about, but NEVER a known 5
+  //    Prefer older cards (higher age = less likely to be important)
   {
     let bestIdx = -1;
-    let bestPriority = Infinity;
+    let bestScore = -Infinity;
     for (let i = 0; i < me.hand.length; i++) {
       const knownRank = me.hintInfo.knownRanks[i];
       if (knownRank === 5) continue;
       const knownSuit = me.hintInfo.knownSuits[i];
-      let priority = knownRank ?? 6;
-      if (knownSuit && knownRank) priority -= 0.5;
-      if (priority < bestPriority) {
-        bestPriority = priority;
+      // Higher score = better discard candidate
+      // Less info known = higher base score, older cards get a bonus
+      let score = 0;
+      if (!knownRank) score += 3;
+      if (!knownSuit) score += 1;
+      score += me.hintInfo.cardAges[i] * 0.1; // age tiebreaker
+      if (score > bestScore) {
+        bestScore = score;
         bestIdx = i;
       }
     }
@@ -203,7 +211,10 @@ function bestHintByInfoCount(
 // ---------------------------------------------------------------------------
 
 function findCriticalHint(state: GameState, playerIndex: number): Action | null {
-  const candidates: { targetIdx: number; hint: HintValue; count: number }[] = [];
+  // Tier 1: complete partial info on a critical card (one hint away from full knowledge)
+  const completionCandidates: { targetIdx: number; hint: HintValue; count: number }[] = [];
+  // Tier 2: hint about a critical card with no info yet
+  const newCandidates: { targetIdx: number; hint: HintValue; count: number }[] = [];
 
   for (const targetIdx of getPlayersAfterInTurnOrder(playerIndex)) {
     const target = state.players[targetIdx];
@@ -216,35 +227,38 @@ function findCriticalHint(state: GameState, playerIndex: number): Action | null 
       const knowsRank = target.hintInfo.knownRanks[i] === card.rank;
       if (knowsSuit && knowsRank) continue;
 
-      if (!knowsRank) {
-        const hint: HintValue = { kind: 'rank', rank: card.rank };
-        candidates.push({ targetIdx, hint, count: hintNewInfoCount(target, hint) });
-      }
-      if (!knowsSuit) {
-        const hint: HintValue = { kind: 'suit', suit: card.suit };
-        candidates.push({ targetIdx, hint, count: hintNewInfoCount(target, hint) });
+      const hasPartialInfo = knowsSuit || knowsRank;
+
+      if (hasPartialInfo) {
+        // Tier 1: give the missing dimension to complete their knowledge
+        if (!knowsRank) {
+          const hint: HintValue = { kind: 'rank', rank: card.rank };
+          completionCandidates.push({ targetIdx, hint, count: hintNewInfoCount(target, hint) });
+        }
+        if (!knowsSuit) {
+          const hint: HintValue = { kind: 'suit', suit: card.suit };
+          completionCandidates.push({ targetIdx, hint, count: hintNewInfoCount(target, hint) });
+        }
+      } else {
+        // Tier 2: no info yet — for 5s, rank hint is enough (universally recognized);
+        // for non-5s, prefer suit (more disambiguating) but offer both
+        if (card.rank === 5) {
+          const hint: HintValue = { kind: 'rank', rank: card.rank };
+          newCandidates.push({ targetIdx, hint, count: hintNewInfoCount(target, hint) });
+        } else {
+          const suitHint: HintValue = { kind: 'suit', suit: card.suit };
+          // Give suit hint a bonus (+10) so it's preferred over rank for non-5 critical cards
+          newCandidates.push({ targetIdx, hint: suitHint, count: hintNewInfoCount(target, suitHint) + 10 });
+          const rankHint: HintValue = { kind: 'rank', rank: card.rank };
+          newCandidates.push({ targetIdx, hint: rankHint, count: hintNewInfoCount(target, rankHint) });
+        }
       }
     }
   }
 
-  return bestHintByInfoCount(candidates, playerIndex);
-}
-
-function findFiveHint(state: GameState, playerIndex: number): Action | null {
-  const candidates: { targetIdx: number; hint: HintValue; count: number }[] = [];
-
-  for (const targetIdx of getPlayersAfterInTurnOrder(playerIndex)) {
-    const target = state.players[targetIdx];
-    const hasFiveNeedingHint = target.hand.some(
-      (c, i) => c.rank === 5 && target.hintInfo.knownRanks[i] !== 5
-    );
-    if (hasFiveNeedingHint) {
-      const hint: HintValue = { kind: 'rank', rank: 5 as Rank };
-      candidates.push({ targetIdx, hint, count: hintNewInfoCount(target, hint) });
-    }
-  }
-
-  return bestHintByInfoCount(candidates, playerIndex);
+  // Tier 1 takes priority over tier 2
+  return bestHintByInfoCount(completionCandidates, playerIndex)
+    ?? bestHintByInfoCount(newCandidates, playerIndex);
 }
 
 function findPlayableHint(state: GameState, playerIndex: number): Action | null {

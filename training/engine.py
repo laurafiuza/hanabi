@@ -35,6 +35,7 @@ def create_empty_hint_info(size):
     return {
         'known_suits': [None] * size,
         'known_ranks': [None] * size,
+        'card_ages': [0] * size,
     }
 
 
@@ -71,11 +72,13 @@ def get_score(state):
 def _remove_card_from_hints(hint_info, idx):
     hint_info['known_suits'].pop(idx)
     hint_info['known_ranks'].pop(idx)
+    hint_info['card_ages'].pop(idx)
 
 
 def _add_card_to_hints(hint_info):
     hint_info['known_suits'].append(None)
     hint_info['known_ranks'].append(None)
+    hint_info['card_ages'].append(0)
 
 
 def _apply_hint(player, hint):
@@ -83,8 +86,10 @@ def _apply_hint(player, hint):
     for i, card in enumerate(player['hand']):
         if hint['kind'] == 'suit' and card['suit'] == hint['value']:
             player['hint_info']['known_suits'][i] = hint['value']
+            player['hint_info']['card_ages'][i] = 0
         elif hint['kind'] == 'rank' and card['rank'] == hint['value']:
             player['hint_info']['known_ranks'][i] = hint['value']
+            player['hint_info']['card_ages'][i] = 0
 
 
 def _check_unwinnable(state):
@@ -232,6 +237,10 @@ def apply_action(state, action):
         if state['turns_remaining'] <= 0:
             state['status'] = 'finished'
             return state
+
+    # Age all cards
+    for p in state['players']:
+        p['hint_info']['card_ages'] = [a + 1 for a in p['hint_info']['card_ages']]
 
     # Advance turn
     state['current_player'] = (state['current_player'] + 1) % NUM_PLAYERS

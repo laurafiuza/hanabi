@@ -8,12 +8,17 @@ interface CardProps {
   knownSuit?: Suit | null;
   knownRank?: Rank | null;
   cardAge?: number;
+  isChop?: boolean;
   selected?: boolean;
   highlighted?: boolean;
   onClick?: () => void;
 }
 
-export function Card({ card, faceUp, knownSuit, knownRank, cardAge, selected, highlighted, onClick }: CardProps) {
+const CHOP_TOOLTIP = 'The chop is the oldest unclued card — the one that would be discarded next. Protect it if it holds a critical card!';
+
+export function Card({ card, faceUp, knownSuit, knownRank, cardAge, isChop, selected, highlighted, onClick }: CardProps) {
+  const ageTooltip = cardAge != null ? `Age: ${cardAge} turn${cardAge === 1 ? '' : 's'} since drawn or last clued.` : '';
+
   if (faceUp && card) {
     return (
       <div
@@ -24,11 +29,13 @@ export function Card({ card, faceUp, knownSuit, knownRank, cardAge, selected, hi
         <div className={styles.rank}>{card.rank}</div>
         <div className={styles.suit}>{suitSymbol(card.suit)}</div>
         {cardAge != null && (
-          <div
-            className={styles.age}
-            title={`Card age: ${cardAge} turn${cardAge === 1 ? '' : 's'} since drawn or last clued. The oldest unclued card is your "chop" — the one you'd discard next.`}
-          >
+          <div className={`${styles.age} ${styles.tooltip}`} data-tooltip={ageTooltip}>
             {cardAge}
+          </div>
+        )}
+        {isChop && (
+          <div className={`${styles.chopLabel} ${styles.tooltip}`} data-tooltip={CHOP_TOOLTIP}>
+            CHOP
           </div>
         )}
       </div>
@@ -50,13 +57,15 @@ export function Card({ card, faceUp, knownSuit, knownRank, cardAge, selected, hi
         {!knownSuit && !knownRank && <span className={styles.unknown}>?</span>}
       </div>
       {cardAge != null && (
-          <div
-            className={styles.age}
-            title={`Card age: ${cardAge} turn${cardAge === 1 ? '' : 's'} since drawn or last clued. The oldest unclued card is your "chop" — the one you'd discard next.`}
-          >
-            {cardAge}
-          </div>
-        )}
+        <div className={`${styles.age} ${styles.tooltip}`} data-tooltip={ageTooltip}>
+          {cardAge}
+        </div>
+      )}
+      {isChop && (
+        <div className={`${styles.chopLabel} ${styles.tooltip}`} data-tooltip={CHOP_TOOLTIP}>
+          CHOP
+        </div>
+      )}
     </div>
   );
 }

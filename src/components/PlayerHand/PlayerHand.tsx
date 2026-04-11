@@ -1,4 +1,5 @@
 import type { Player } from '../../engine/types';
+import { getChopIndex } from '../../engine/ai';
 import { Card } from '../Card/Card';
 import styles from './PlayerHand.module.css';
 
@@ -20,6 +21,7 @@ export function PlayerHand({
   onViewKnowledge,
 }: PlayerHandProps) {
   const faceUp = !player.isHuman;
+  const chopIdx = getChopIndex(player);
 
   return (
     <div className={`${styles.hand} ${isCurrentPlayer ? styles.active : ''}`}>
@@ -43,6 +45,7 @@ export function PlayerHand({
             knownSuit={player.hintInfo.knownSuits[i]}
             knownRank={player.hintInfo.knownRanks[i]}
             cardAge={player.hintInfo.cardAges[i]}
+            isChop={i === chopIdx}
             selected={selectedCardIndex === i}
             highlighted={highlightedCards?.has(i)}
             onClick={() => onCardClick?.(i)}

@@ -183,7 +183,8 @@ def score_action(state, player_idx, action):
         kr = me['hint_info']['known_ranks'][idx]
 
         if is_known_safe_play(ks, kr, state):
-            return ('must', 100 - kr)
+            # Plays are must-tier but score below critical saves (which start at 80+).
+            return ('must', 60 - kr)
 
         if state['turns_remaining'] is not None and (ks is not None or kr is not None):
             return ('neutral', 10)

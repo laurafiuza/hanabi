@@ -13,7 +13,7 @@ import type { GameState, Action, Card, Suit, Rank, Player } from './types';
 import { SUITS, RANKS } from './types';
 import { RANK_COUNTS } from './deck';
 import { applyAction, getValidActions, getScore } from './game';
-import { heuristicBotAction, scoreAction, TIER_ORDER, RANK_COPIES } from './ai';
+import { heuristicBotAction, scoreAction, TIER_ORDER } from './ai';
 import type { ActionTier } from './ai';
 
 const TIME_BUDGET_MS = 5000;

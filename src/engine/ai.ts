@@ -1,5 +1,5 @@
 import type { GameState, Action, Card, Player, Rank, Suit, HintValue } from './types';
-import { SUITS, MAX_INFO_TOKENS, getPlayersAfterInTurnOrder } from './types';
+import { SUITS, MAX_INFO_TOKENS } from './types';
 import { getValidActions } from './game';
 import { chooseMCTSAction } from './mcts';
 
@@ -338,8 +338,8 @@ export function analyzeHumanAction(state: GameState, action: Action): string | n
     return humanScore.reason;
   }
 
-  // Warn only if a 'must' was available and human chose lower
-  if (best.tier === 'must' && humanScore.tier !== 'must') {
+  // Warn only if a 'must' was available (human is in strong/neutral at this point)
+  if (best.tier === 'must') {
     return `${best.reason} was available as a higher-priority move.`;
   }
 

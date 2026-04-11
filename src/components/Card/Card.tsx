@@ -23,7 +23,14 @@ export function Card({ card, faceUp, knownSuit, knownRank, cardAge, selected, hi
       >
         <div className={styles.rank}>{card.rank}</div>
         <div className={styles.suit}>{suitSymbol(card.suit)}</div>
-        {cardAge != null && <div className={styles.age}>{cardAge}</div>}
+        {cardAge != null && (
+          <div
+            className={styles.age}
+            title={`Card age: ${cardAge} turn${cardAge === 1 ? '' : 's'} since drawn or last clued. The oldest unclued card is your "chop" — the one you'd discard next.`}
+          >
+            {cardAge}
+          </div>
+        )}
       </div>
     );
   }
@@ -42,7 +49,14 @@ export function Card({ card, faceUp, knownSuit, knownRank, cardAge, selected, hi
         {knownRank && <span className={styles.hintBadge}>{knownRank}</span>}
         {!knownSuit && !knownRank && <span className={styles.unknown}>?</span>}
       </div>
-      {cardAge != null && <div className={styles.age}>{cardAge}</div>}
+      {cardAge != null && (
+          <div
+            className={styles.age}
+            title={`Card age: ${cardAge} turn${cardAge === 1 ? '' : 's'} since drawn or last clued. The oldest unclued card is your "chop" — the one you'd discard next.`}
+          >
+            {cardAge}
+          </div>
+        )}
     </div>
   );
 }

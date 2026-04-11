@@ -16,6 +16,8 @@ dist-ssr
 training/.venv
 training/checkpoints
 training/__pycache__
+training/data.pkl
+src/engine/model_weights.json
 
 # Editor directories and files
 .vscode/*

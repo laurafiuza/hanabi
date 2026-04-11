@@ -138,72 +138,27 @@ def sample_determinization(state, player_idx):
 # Action pruning (same logic as TypeScript mcts.ts)
 # ---------------------------------------------------------------------------
 
-def prune_actions(actions, state, player_idx):
-    me = state['players'][player_idx]
-    dominated = set()
+def filter_and_rank_actions(actions, state, player_idx):
+    """Filter out 'bad' tier actions and sort by tier+score (best first)."""
+    from heuristic_bot import score_action, TIER_ORDER
 
+    scored = []
     for a in actions:
-        key = action_key(a)
+        tier, sc = score_action(state, player_idx, a)
+        scored.append((a, tier, sc))
 
-        if a['type'] == 'discard':
-            kr = me['hint_info']['known_ranks'][a['card_idx']]
-            ks = me['hint_info']['known_suits'][a['card_idx']]
-            if kr == 5:
-                dominated.add(key); continue
-            if ks is not None and kr is not None and state['play_area'][ks] == kr - 1:
-                dominated.add(key); continue
-            if kr is not None and ks is None:
-                all_ready = all(state['play_area'][s] >= kr or state['play_area'][s] == kr - 1
-                               for s in range(len(SUITS)))
-                some_need = any(state['play_area'][s] == kr - 1 for s in range(len(SUITS)))
-                if all_ready and some_need:
-                    dominated.add(key); continue
-            if ks is not None and kr is not None and state['play_area'][ks] < kr:
-                discarded = sum(1 for c in state['discard_pile']
-                               if c['suit'] == ks and c['rank'] == kr)
-                if discarded >= RANK_COPIES[kr] - 1:
-                    dominated.add(key); continue
+    # Filter out bad tier
+    filtered = [(a, t, s) for a, t, s in scored if t != 'bad']
 
-        if a['type'] == 'play':
-            kr = me['hint_info']['known_ranks'][a['card_idx']]
-            ks = me['hint_info']['known_suits'][a['card_idx']]
-            if state['turns_remaining'] is not None:
-                # Endgame: only prune provably bad
-                if ks is not None and kr is not None and state['play_area'][ks] >= kr:
-                    dominated.add(key); continue
-                if ks is not None and kr is not None and state['play_area'][ks] != kr - 1:
-                    dominated.add(key); continue
-                if kr is not None and ks is None:
-                    if not any(state['play_area'][s] == kr - 1 for s in range(len(SUITS))):
-                        dominated.add(key); continue
-            else:
-                # Not endgame: only allow known-safe plays
-                is_known_playable = (
-                    (ks is not None and kr is not None and state['play_area'][ks] == kr - 1) or
-                    (kr is not None and ks is None and
-                     all(state['play_area'][s] >= kr or state['play_area'][s] == kr - 1
-                         for s in range(len(SUITS))) and
-                     any(state['play_area'][s] == kr - 1 for s in range(len(SUITS))))
-                )
-                if not is_known_playable:
-                    dominated.add(key); continue
+    # Sort by tier desc, then score desc
+    filtered.sort(key=lambda x: (TIER_ORDER[x[1]], x[2]), reverse=True)
 
-        if a['type'] == 'hint':
-            target = state['players'][a['target']]
-            hint = a['hint']
-            any_new = False
-            for i, card in enumerate(target['hand']):
-                if hint['kind'] == 'suit':
-                    if card['suit'] == hint['value'] and target['hint_info']['known_suits'][i] != hint['value']:
-                        any_new = True; break
-                else:
-                    if card['rank'] == hint['value'] and target['hint_info']['known_ranks'][i] != hint['value']:
-                        any_new = True; break
-            if not any_new:
-                dominated.add(key); continue
+    # Safety: never filter all actions
+    if not filtered:
+        scored.sort(key=lambda x: (TIER_ORDER[x[1]], x[2]), reverse=True)
+        return [a for a, _, _ in scored]
 
-    filtered = [a for a in actions if action_key(a) not in dominated]
-    return filtered if filtered else actions
+    return [a for a, _, _ in filtered]
 
 
 # ---------------------------------------------------------------------------
@@ -260,14 +215,15 @@ def tree_select(root, state, pruned_root_actions):
     return node, sim_state, is_root
 
 
-def expand(node, state, pruned_actions):
+def expand(node, state, ranked_root_actions):
     if state['status'] != 'playing':
         return node, state
 
     all_actions = get_valid_actions(state, state['current_player'])
-    if pruned_actions is not None:
+    if ranked_root_actions is not None:
+        # Root level: use ranked actions (already sorted by tier+score)
         valid_keys = {action_key(a) for a in all_actions}
-        actions = [a for a in pruned_actions if action_key(a) in valid_keys]
+        actions = [a for a in ranked_root_actions if action_key(a) in valid_keys]
     else:
         actions = all_actions
 
@@ -275,7 +231,9 @@ def expand(node, state, pruned_actions):
     if not untried:
         return node, state
 
-    action = random.choice(untried)
+    # At root: pick first untried (biased toward best tier+score)
+    # At deeper nodes: pick randomly
+    action = untried[0] if ranked_root_actions is not None else random.choice(untried)
     key = action_key(action)
     child = MCTSNode(parent=node, action_key=key, action=action)
     node.children[key] = child
@@ -324,9 +282,9 @@ def run_mcts(state, player_idx, policy_fn, time_budget_ms=200):
     if not all_actions:
         return []
 
-    pruned = prune_actions(all_actions, state, player_idx)
-    if len(pruned) == 1:
-        return [(pruned[0], 1)]
+    ranked = filter_and_rank_actions(all_actions, state, player_idx)
+    if len(ranked) == 1:
+        return [(ranked[0], 1)]
 
     root = MCTSNode()
     deadline = time.monotonic() + time_budget_ms / 1000.0
@@ -339,10 +297,10 @@ def run_mcts(state, player_idx, policy_fn, time_budget_ms=200):
             continue
 
         # 2. Select
-        node, sim_state, is_root = tree_select(root, det, pruned)
+        node, sim_state, is_root = tree_select(root, det, ranked)
 
-        # 3. Expand
-        node, sim_state = expand(node, sim_state, pruned if is_root else None)
+        # 3. Expand (biased at root, random at deeper nodes)
+        node, sim_state = expand(node, sim_state, ranked if is_root else None)
 
         # 4. Rollout
         score = rollout_with_policy(sim_state, policy_fn)

@@ -10,6 +10,7 @@
   transition: transform 0.15s, box-shadow 0.15s;
   user-select: none;
   font-weight: bold;
+  position: relative;
 }
 
 .card:hover {
@@ -65,4 +66,13 @@
 .unknown {
   font-size: 28px;
   color: #666;
+}
+
+.age {
+  position: absolute;
+  bottom: 2px;
+  right: 4px;
+  font-size: 10px;
+  color: #666;
+  font-weight: normal;
 }

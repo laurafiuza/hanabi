@@ -56,3 +56,16 @@
 .text {
   color: #777;
 }
+
+.tip {
+  background: rgba(255, 200, 50, 0.08);
+  border-left: 2px solid rgba(255, 200, 50, 0.4);
+  padding-left: 10px;
+}
+
+.tipText {
+  color: #c9a84c;
+  font-style: italic;
+  font-size: 11px;
+  line-height: 1.4;
+}

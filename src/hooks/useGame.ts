@@ -1,13 +1,27 @@
 import { useReducer, useEffect, useCallback } from 'react';
 import type { GameState, Action } from '../engine/types';
 import { createGame, applyAction } from '../engine/game';
-import { chooseBotAction } from '../engine/ai';
+import { chooseBotAction, analyzeHumanAction } from '../engine/ai';
 
 function gameReducer(state: GameState, action: Action | { type: 'NEW_GAME' }): GameState {
   if (action.type === 'NEW_GAME') {
     return createGame();
   }
-  return applyAction(state, action as Action);
+  const act = action as Action;
+  const isHuman = state.players[act.playerIndex]?.isHuman;
+
+  // Analyze the human's action BEFORE applying it (need pre-action state)
+  const tip = isHuman ? analyzeHumanAction(state, act) : null;
+
+  const newState = applyAction(state, act);
+
+  if (tip) {
+    return {
+      ...newState,
+      history: [...newState.history, { playerName: 'Tip', text: tip, turn: state.turnNumber }],
+    };
+  }
+  return newState;
 }
 
 const INITIAL_STATE: GameState = {

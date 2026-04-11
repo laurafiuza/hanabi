@@ -23,7 +23,7 @@ from network import HanabiNet
 from features import featurize, NUM_FEATURES
 from actions import (
     NUM_ACTIONS, encode_action, decode_action,
-    get_valid_action_mask
+    get_valid_action_mask, get_tier_mask
 )
 from engine import create_game, apply_action, get_score, clone_state
 from heuristic_bot import choose_heuristic_action
@@ -43,7 +43,7 @@ def evaluate(model, num_games=1000):
         while state['status'] == 'playing':
             player_idx = state['current_player']
             feat = featurize(state, player_idx)
-            mask = get_valid_action_mask(state, player_idx)
+            mask = get_tier_mask(state, player_idx)
             action_idx = model.predict_action(feat, mask)
             action = decode_action(action_idx, player_idx)
             apply_action(state, action)
@@ -69,7 +69,7 @@ def evaluate_mcts_with_model(model, num_games=200, mcts_budget_ms=200):
 
     def neural_policy(state, player_idx):
         feat = featurize(state, player_idx)
-        mask = get_valid_action_mask(state, player_idx)
+        mask = get_tier_mask(state, player_idx)
         action_idx = model.predict_action(feat, mask)
         return decode_action(action_idx, player_idx)
 
@@ -217,7 +217,7 @@ def _generate_one_game_mcts(args):
 def generate_mcts_data(num_games=5000, mcts_budget_ms=200, num_workers=None):
     """Generate training data using MCTS with heuristic rollout."""
     if num_workers is None:
-        num_workers = min(mp.cpu_count(), 8)
+        num_workers = min(mp.cpu_count(), 12)
 
     print(f"  Generating {num_games:,} MCTS games ({mcts_budget_ms}ms/move, {num_workers} workers)...")
     t0 = time.time()

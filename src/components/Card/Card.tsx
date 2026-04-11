@@ -7,12 +7,13 @@ interface CardProps {
   faceUp: boolean;
   knownSuit?: Suit | null;
   knownRank?: Rank | null;
+  cardAge?: number;
   selected?: boolean;
   highlighted?: boolean;
   onClick?: () => void;
 }
 
-export function Card({ card, faceUp, knownSuit, knownRank, selected, highlighted, onClick }: CardProps) {
+export function Card({ card, faceUp, knownSuit, knownRank, cardAge, selected, highlighted, onClick }: CardProps) {
   if (faceUp && card) {
     return (
       <div
@@ -22,6 +23,7 @@ export function Card({ card, faceUp, knownSuit, knownRank, selected, highlighted
       >
         <div className={styles.rank}>{card.rank}</div>
         <div className={styles.suit}>{suitSymbol(card.suit)}</div>
+        {cardAge != null && <div className={styles.age}>{cardAge}</div>}
       </div>
     );
   }
@@ -40,6 +42,7 @@ export function Card({ card, faceUp, knownSuit, knownRank, selected, highlighted
         {knownRank && <span className={styles.hintBadge}>{knownRank}</span>}
         {!knownSuit && !knownRank && <span className={styles.unknown}>?</span>}
       </div>
+      {cardAge != null && <div className={styles.age}>{cardAge}</div>}
     </div>
   );
 }

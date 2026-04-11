@@ -63,3 +63,19 @@ def get_valid_action_mask(state, player_idx):
         idx = encode_action(action, player_idx)
         mask[idx] = True
     return mask
+
+
+def get_tier_mask(state, player_idx):
+    """Return 68-bool mask: True only for non-bad tier actions."""
+    from heuristic_bot import score_action
+    from engine import get_valid_actions
+    mask = [False] * NUM_ACTIONS
+    for action in get_valid_actions(state, player_idx):
+        tier, _ = score_action(state, player_idx, action)
+        if tier != 'bad':
+            idx = encode_action(action, player_idx)
+            mask[idx] = True
+    # Safety: if all masked out, fall back to validity mask
+    if not any(mask):
+        return get_valid_action_mask(state, player_idx)
+    return mask

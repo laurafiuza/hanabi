@@ -1,5 +1,6 @@
 """
 Python port of the heuristic bot from src/engine/ai.ts.
+Uses unified action scoring (tier + score) for decision making.
 Used as baseline and for ExIt training data generation.
 """
 from engine import (
@@ -7,6 +8,48 @@ from engine import (
 )
 
 SUIT_COUNT = len(SUITS)
+
+TIER_ORDER = {'must': 3, 'strong': 2, 'neutral': 1, 'bad': 0}
+
+
+# ---------------------------------------------------------------------------
+# Convention helpers
+# ---------------------------------------------------------------------------
+
+def get_chop_index(player):
+    """Return index of the oldest (leftmost) unclued card, or -1 if fully clued."""
+    for i in range(len(player['hand'])):
+        if (player['hint_info']['known_suits'][i] is None
+                and player['hint_info']['known_ranks'][i] is None):
+            return i
+    return -1
+
+
+def is_card_trash(card, state):
+    """A card is trash if already played or unreachable (gap below in suit)."""
+    suit, rank = card['suit'], card['rank']
+    if state['play_area'][suit] >= rank:
+        return True
+    next_needed = state['play_area'][suit] + 1
+    for r in range(next_needed, rank):
+        total = RANK_COPIES[r]
+        discarded = sum(1 for c in state['discard_pile']
+                        if c['suit'] == suit and c['rank'] == r)
+        if discarded >= total:
+            return True
+    return False
+
+
+def hint_touches_trash(target, hint, state):
+    """Good Touch Principle: does this hint touch any trash card?"""
+    for i, card in enumerate(target['hand']):
+        if hint['kind'] == 'suit':
+            touches = card['suit'] == hint['value']
+        else:
+            touches = card['rank'] == hint['value']
+        if touches and is_card_trash(card, state):
+            return True
+    return False
 
 
 def is_critical(card, state):
@@ -36,6 +79,17 @@ def is_suit_complete(suit, state):
     return state['play_area'][suit] >= 5
 
 
+def is_known_safe_play(ks, kr, state):
+    if ks is not None and kr is not None:
+        return is_card_playable(ks, kr, state)
+    if kr is not None and ks is None:
+        all_ready = all(state['play_area'][s] >= kr or state['play_area'][s] == kr - 1
+                        for s in range(SUIT_COUNT))
+        some_need = any(state['play_area'][s] == kr - 1 for s in range(SUIT_COUNT))
+        return all_ready and some_need
+    return False
+
+
 def hint_new_info_count(target, hint):
     count = 0
     for i, card in enumerate(target['hand']):
@@ -48,237 +102,184 @@ def hint_new_info_count(target, hint):
     return count
 
 
-def best_hint_by_info_count(candidates, player_idx):
-    if not candidates:
-        return None
-    candidates.sort(key=lambda c: c['count'], reverse=True)
-    best = candidates[0]
-    return {'type': 'hint', 'player': player_idx, 'target': best['target'],
-            'hint': best['hint']}
+# ---------------------------------------------------------------------------
+# Hint classification helpers
+# ---------------------------------------------------------------------------
+
+def is_hint_a_save(state, target_idx, hint):
+    target = state['players'][target_idx]
+    chop_idx = get_chop_index(target)
+    if chop_idx < 0:
+        return False
+    chop_card = target['hand'][chop_idx]
+    if not is_critical(chop_card, state):
+        return False
+    if hint['kind'] == 'suit':
+        return chop_card['suit'] == hint['value']
+    return chop_card['rank'] == hint['value']
+
+
+def is_hint_a_2_save(state, target_idx, hint):
+    target = state['players'][target_idx]
+    chop_idx = get_chop_index(target)
+    if chop_idx < 0:
+        return False
+    chop_card = target['hand'][chop_idx]
+    if chop_card['rank'] != 2 or state['play_area'][chop_card['suit']] >= 2:
+        return False
+    if is_critical(chop_card, state):
+        return False
+    if (target['hint_info']['known_suits'][chop_idx] is not None
+            or target['hint_info']['known_ranks'][chop_idx] is not None):
+        return False
+    if hint['kind'] == 'suit':
+        return chop_card['suit'] == hint['value']
+    return chop_card['rank'] == hint['value']
+
+
+def is_hint_a_play_clue(state, target_idx, hint):
+    target = state['players'][target_idx]
+    for i, card in enumerate(target['hand']):
+        if hint['kind'] == 'suit':
+            touches = card['suit'] == hint['value']
+        else:
+            touches = card['rank'] == hint['value']
+        if not touches:
+            continue
+        if state['play_area'][card['suit']] == card['rank'] - 1:
+            ks = target['hint_info']['known_suits'][i] == card['suit']
+            kr = target['hint_info']['known_ranks'][i] == card['rank']
+            if not (ks and kr):
+                return True
+    return False
+
+
+def is_hint_useful(state, target_idx, hint):
+    target = state['players'][target_idx]
+    for i, card in enumerate(target['hand']):
+        if hint['kind'] == 'suit':
+            touches = card['suit'] == hint['value']
+        else:
+            touches = card['rank'] == hint['value']
+        if not touches:
+            continue
+        needed = state['play_area'][card['suit']] + 1
+        if card['rank'] >= needed and card['rank'] <= needed + 1:
+            return True
+    return False
 
 
 # ---------------------------------------------------------------------------
-# Hint finders
+# Core scoring function
 # ---------------------------------------------------------------------------
 
-def find_critical_hint(state, player_idx):
-    """Two-tier critical hint:
-    Tier 1: complete partial info on a critical card (one hint away from full knowledge)
-    Tier 2: hint about a critical card with no info yet (prefer suit for non-5s, rank for 5s)
-    """
-    completion = []
-    new_info = []
-
-    for offset in range(1, NUM_PLAYERS):
-        target_idx = (player_idx + offset) % NUM_PLAYERS
-        target = state['players'][target_idx]
-
-        for i, card in enumerate(target['hand']):
-            if not is_critical(card, state):
-                continue
-            knows_suit = target['hint_info']['known_suits'][i] == card['suit']
-            knows_rank = target['hint_info']['known_ranks'][i] == card['rank']
-            if knows_suit and knows_rank:
-                continue
-
-            has_partial = knows_suit or knows_rank
-
-            if has_partial:
-                # Tier 1: give the missing dimension
-                if not knows_rank:
-                    hint = {'kind': 'rank', 'value': card['rank']}
-                    completion.append({'target': target_idx, 'hint': hint,
-                                       'count': hint_new_info_count(target, hint)})
-                if not knows_suit:
-                    hint = {'kind': 'suit', 'value': card['suit']}
-                    completion.append({'target': target_idx, 'hint': hint,
-                                       'count': hint_new_info_count(target, hint)})
-            else:
-                # Tier 2: no info yet
-                if card['rank'] == 5:
-                    hint = {'kind': 'rank', 'value': card['rank']}
-                    new_info.append({'target': target_idx, 'hint': hint,
-                                     'count': hint_new_info_count(target, hint)})
-                else:
-                    # Prefer suit for non-5 critical cards (more disambiguating)
-                    suit_hint = {'kind': 'suit', 'value': card['suit']}
-                    new_info.append({'target': target_idx, 'hint': suit_hint,
-                                     'count': hint_new_info_count(target, suit_hint) + 10})
-                    rank_hint = {'kind': 'rank', 'value': card['rank']}
-                    new_info.append({'target': target_idx, 'hint': rank_hint,
-                                     'count': hint_new_info_count(target, rank_hint)})
-
-    result = best_hint_by_info_count(completion, player_idx)
-    if result:
-        return result
-    return best_hint_by_info_count(new_info, player_idx)
-
-
-def find_playable_hint(state, player_idx):
-    candidates = []
-    for offset in range(1, NUM_PLAYERS):
-        target_idx = (player_idx + offset) % NUM_PLAYERS
-        target = state['players'][target_idx]
-        for i, card in enumerate(target['hand']):
-            if state['play_area'][card['suit']] != card['rank'] - 1:
-                continue
-            knows_suit = target['hint_info']['known_suits'][i] == card['suit']
-            knows_rank = target['hint_info']['known_ranks'][i] == card['rank']
-            if knows_suit and knows_rank:
-                continue
-            if not knows_rank:
-                hint = {'kind': 'rank', 'value': card['rank']}
-                candidates.append({'target': target_idx, 'hint': hint,
-                                   'count': hint_new_info_count(target, hint)})
-            if not knows_suit:
-                hint = {'kind': 'suit', 'value': card['suit']}
-                candidates.append({'target': target_idx, 'hint': hint,
-                                   'count': hint_new_info_count(target, hint)})
-    return best_hint_by_info_count(candidates, player_idx)
-
-
-def find_any_useful_hint(state, player_idx):
-    candidates = []
-    for offset in range(1, NUM_PLAYERS):
-        target_idx = (player_idx + offset) % NUM_PLAYERS
-        target = state['players'][target_idx]
-        for i, card in enumerate(target['hand']):
-            needed = state['play_area'][card['suit']] + 1
-            if card['rank'] >= needed and card['rank'] <= needed + 1:
-                if target['hint_info']['known_ranks'][i] != card['rank']:
-                    hint = {'kind': 'rank', 'value': card['rank']}
-                    candidates.append({'target': target_idx, 'hint': hint,
-                                       'count': hint_new_info_count(target, hint)})
-                if target['hint_info']['known_suits'][i] != card['suit']:
-                    hint = {'kind': 'suit', 'value': card['suit']}
-                    candidates.append({'target': target_idx, 'hint': hint,
-                                       'count': hint_new_info_count(target, hint)})
-    return best_hint_by_info_count(candidates, player_idx)
-
-
-# ---------------------------------------------------------------------------
-# Discard helpers
-# ---------------------------------------------------------------------------
-
-def find_useless_discard(state, player_idx):
+def score_action(state, player_idx, action):
+    """Returns (tier, score) for an action."""
     me = state['players'][player_idx]
-    # Full knowledge: suit+rank and already played
-    for i in range(len(me['hand'])):
-        ks = me['hint_info']['known_suits'][i]
-        kr = me['hint_info']['known_ranks'][i]
+
+    if action['type'] == 'play':
+        idx = action['card_idx']
+        ks = me['hint_info']['known_suits'][idx]
+        kr = me['hint_info']['known_ranks'][idx]
+
+        if is_known_safe_play(ks, kr, state):
+            return ('must', 100 - kr)
+
+        if state['turns_remaining'] is not None and (ks is not None or kr is not None):
+            return ('neutral', 10)
+
+        if ks is not None and kr is not None:
+            return ('bad', -100)
+
+        # Partially known (suit or rank) — risky but not blind
+        if ks is not None or kr is not None:
+            return ('bad', -30)
+
+        # Truly unknown — no info at all
+        return ('bad', -200)
+
+    if action['type'] == 'discard':
+        idx = action['card_idx']
+        ks = me['hint_info']['known_suits'][idx]
+        kr = me['hint_info']['known_ranks'][idx]
+
+        if kr == 5:
+            return ('bad', -50)
+
+        if is_known_safe_play(ks, kr, state):
+            return ('bad', -100)
+
+        if ks is not None and kr is not None and is_critical(me['hand'][idx], state):
+            return ('bad', -80)
+
         if ks is not None and kr is not None and is_card_useless(ks, kr, state):
-            return i
-    # Rank-only: all suits have played past this rank
-    for i in range(len(me['hand'])):
-        kr = me['hint_info']['known_ranks'][i]
+            return ('strong', 50)
         if kr is not None and is_rank_useless(kr, state):
-            return i
-    # Suit-only: suit is complete
-    for i in range(len(me['hand'])):
-        ks = me['hint_info']['known_suits'][i]
-        kr = me['hint_info']['known_ranks'][i]
+            return ('strong', 48)
         if ks is not None and kr is None and is_suit_complete(ks, state):
-            return i
-    return -1
+            return ('strong', 46)
+
+        chop_idx = get_chop_index(me)
+        if chop_idx >= 0 and idx == chop_idx:
+            token_bonus = 40 if state['info_tokens'] >= MAX_INFO_TOKENS else (10 if state['info_tokens'] >= 4 else 0)
+            return ('neutral', 35 + token_bonus)
+
+        if ks is None and kr is None:
+            return ('bad', -10)
+
+        return ('bad', -20)
+
+    if action['type'] == 'hint':
+        target_idx = action['target']
+        target = state['players'][target_idx]
+        hint = action['hint']
+        info_count = hint_new_info_count(target, hint)
+        touches_trash = hint_touches_trash(target, hint, state)
+
+        if info_count == 0:
+            return ('bad', 0)
+
+        if touches_trash:
+            if is_hint_a_save(state, target_idx, hint):
+                return ('strong', 40 + info_count)
+            return ('bad', 0)
+
+        if is_hint_a_save(state, target_idx, hint):
+            return ('must', 80 + info_count)
+
+        if is_hint_a_2_save(state, target_idx, hint):
+            return ('strong', 60 + info_count)
+
+        if is_hint_a_play_clue(state, target_idx, hint):
+            return ('strong', 55 + info_count)
+
+        if is_hint_useful(state, target_idx, hint):
+            return ('neutral', 30 + info_count)
+
+        return ('neutral', 10 + info_count)
+
+    return ('neutral', 0)
 
 
 # ---------------------------------------------------------------------------
-# Main heuristic
+# Main heuristic (uses score_action)
 # ---------------------------------------------------------------------------
 
 def choose_heuristic_action(state, player_idx):
     actions = get_valid_actions(state, player_idx)
-    me = state['players'][player_idx]
+    scored = []
+    for a in actions:
+        tier, sc = score_action(state, player_idx, a)
+        scored.append((a, tier, sc))
 
-    # 1-2. Play known-safe, prefer lowest rank
-    best_idx = -1
-    best_rank = 999
-    for i in range(len(me['hand'])):
-        ks = me['hint_info']['known_suits'][i]
-        kr = me['hint_info']['known_ranks'][i]
-        if ks is not None and kr is not None and is_card_playable(ks, kr, state):
-            if kr < best_rank:
-                best_rank = kr
-                best_idx = i
-        if kr is not None and ks is None:
-            all_ready = all(state['play_area'][s] >= kr or state['play_area'][s] == kr - 1
-                           for s in range(SUIT_COUNT))
-            some_need = any(state['play_area'][s] == kr - 1 for s in range(SUIT_COUNT))
-            if all_ready and some_need and kr < best_rank:
-                best_rank = kr
-                best_idx = i
-    if best_idx >= 0:
-        return {'type': 'play', 'player': player_idx, 'card_idx': best_idx}
+    # Sort by tier desc, then score desc
+    scored.sort(key=lambda x: (TIER_ORDER[x[1]], x[2]), reverse=True)
 
-    # At max info tokens, prefer discarding useless before hinting
-    if state['info_tokens'] >= MAX_INFO_TOKENS:
-        useless = find_useless_discard(state, player_idx)
-        if useless >= 0:
-            return {'type': 'discard', 'player': player_idx, 'card_idx': useless}
-
-    # 3. Critical hint (two-tier)
-    if state['info_tokens'] > 0:
-        hint = find_critical_hint(state, player_idx)
-        if hint:
-            return hint
-
-    # 4. Playable hint
-    if state['info_tokens'] > 0:
-        hint = find_playable_hint(state, player_idx)
-        if hint:
-            return hint
-
-    # 5. Discard known-useless
-    useless = find_useless_discard(state, player_idx)
-    if useless >= 0:
-        return {'type': 'discard', 'player': player_idx, 'card_idx': useless}
-
-    # 6. Any useful hint before discarding
-    if state['info_tokens'] > 0:
-        hint = find_any_useful_hint(state, player_idx)
-        if hint:
-            return hint
-
-    # 7. Discard oldest unhinted card (highest age, no hint info), never discard known 5
-    best_idx = -1
-    best_age = -1
-    for i in range(len(me['hand'])):
-        ks = me['hint_info']['known_suits'][i]
-        kr = me['hint_info']['known_ranks'][i]
-        if ks is None and kr is None and me['hint_info']['card_ages'][i] > best_age:
-            best_age = me['hint_info']['card_ages'][i]
-            best_idx = i
-    if best_idx >= 0:
-        return {'type': 'discard', 'player': player_idx, 'card_idx': best_idx}
-
-    # 8. Discard least-known card, never discard known 5, prefer older
-    best_idx = -1
-    best_score = float('-inf')
-    for i in range(len(me['hand'])):
-        kr = me['hint_info']['known_ranks'][i]
-        if kr == 5:
-            continue
-        ks = me['hint_info']['known_suits'][i]
-        score = 0
-        if kr is None:
-            score += 3
-        if ks is None:
-            score += 1
-        score += me['hint_info']['card_ages'][i] * 0.1
-        if score > best_score:
-            best_score = score
-            best_idx = i
-    if best_idx >= 0:
-        return {'type': 'discard', 'player': player_idx, 'card_idx': best_idx}
-
-    # 9. Any valid hint
-    if state['info_tokens'] > 0:
-        hint_actions = [a for a in actions if a['type'] == 'hint']
-        if hint_actions:
-            return hint_actions[0]
-
-    # 10. Last resort
-    return {'type': 'discard', 'player': player_idx, 'card_idx': 0}
+    # Pick highest non-bad, or least-bad
+    for a, tier, sc in scored:
+        if tier != 'bad':
+            return a
+    return scored[0][0]
 
 
 if __name__ == '__main__':

@@ -42,6 +42,7 @@ export function PlayerHand({
             faceUp={faceUp}
             knownSuit={player.hintInfo.knownSuits[i]}
             knownRank={player.hintInfo.knownRanks[i]}
+            cardAge={player.hintInfo.cardAges[i]}
             selected={selectedCardIndex === i}
             highlighted={highlightedCards?.has(i)}
             onClick={() => onCardClick?.(i)}

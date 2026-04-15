@@ -290,9 +290,9 @@ export function scoreAction(state: GameState, playerIndex: number, action: Actio
 
     if (isKnownSafePlay(knownSuit, knownRank, state)) {
       const rank = knownRank!;
-      // Plays are must-tier but score below critical saves (which start at 80+).
-      // Lower rank = higher priority so we build from 1s up.
-      return { tier: 'must', score: 60 - rank, reason: `Play known-safe ${knownSuit ?? ''} ${rank}` };
+      // Plays outrank saves: playing is free (no token cost) and may
+      // make the save unnecessary. Lower rank = higher priority.
+      return { tier: 'must', score: 100 - rank, reason: `Play known-safe ${knownSuit ?? ''} ${rank}` };
     }
 
     if (knownSuit && knownRank) {

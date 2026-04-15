@@ -260,7 +260,9 @@ def score_action(state, player_idx, action):
         is_endgame = state['turns_remaining'] is not None
 
         if is_known_safe_play(ks, kr, state):
-            return ('must', 60 - kr)
+            # Plays outrank saves: playing is free (no token cost) and may
+            # make the save unnecessary. Lower rank = higher priority.
+            return ('must', 100 - kr)
 
         if ks is not None and kr is not None:
             return ('bad', -100)

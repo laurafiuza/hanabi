@@ -12,7 +12,7 @@ SUIT_IDX = {s: i for i, s in enumerate(SUITS)}
 RANKS = [1, 2, 3, 4, 5]
 RANK_COPIES = {1: 3, 2: 2, 3: 2, 4: 2, 5: 1}
 MAX_INFO_TOKENS = 8
-INITIAL_FUSE_TOKENS = 1
+INITIAL_FUSE_TOKENS = 3
 HAND_SIZE = 4
 NUM_PLAYERS = 5
 
@@ -230,7 +230,9 @@ def apply_action(state, action):
 
     # End-game countdown
     if not state['deck'] and state['turns_remaining'] is None:
-        state['turns_remaining'] = NUM_PLAYERS
+        # Each player gets exactly one more turn after deck empties.
+        # +1 because we decrement immediately below on this same turn.
+        state['turns_remaining'] = NUM_PLAYERS + 1
 
     if state['turns_remaining'] is not None:
         state['turns_remaining'] -= 1

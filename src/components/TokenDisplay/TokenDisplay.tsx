@@ -1,4 +1,4 @@
-import { MAX_INFO_TOKENS } from '../../engine/types';
+import { MAX_INFO_TOKENS, INITIAL_FUSE_TOKENS } from '../../engine/types';
 import styles from './TokenDisplay.module.css';
 
 interface TokenDisplayProps {
@@ -25,7 +25,7 @@ export function TokenDisplay({ infoTokens, fuseTokens, deckSize, score }: TokenD
       <div className={styles.group}>
         <span className={styles.label}>Fuse</span>
         <div className={styles.tokens}>
-          {Array.from({ length: 1 }, (_, i) => (
+          {Array.from({ length: INITIAL_FUSE_TOKENS }, (_, i) => (
             <span
               key={i}
               className={`${styles.fuse} ${i < fuseTokens ? styles.fuseActive : styles.fuseSpent}`}

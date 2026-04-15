@@ -1,5 +1,5 @@
 import type { GameState, Action, Card, Player, Rank, Suit, HintValue } from './types';
-import { SUITS, MAX_INFO_TOKENS } from './types';
+import { SUITS, RANKS, MAX_INFO_TOKENS } from './types';
 import { getValidActions } from './game';
 import { chooseMCTSAction } from './mcts';
 
@@ -74,6 +74,122 @@ function isCardPlayable(suit: Suit, rank: Rank, state: GameState): boolean {
 
 function isSuitComplete(suit: Suit, state: GameState): boolean {
   return state.playArea[suit] >= 5;
+}
+
+// ---------------------------------------------------------------------------
+// Endgame deduction: when deck is empty, deduce cards by elimination
+// ---------------------------------------------------------------------------
+
+interface DeducedCard {
+  suit: Suit | null;
+  rank: Rank | null;
+}
+
+// Build the pool of cards not visible anywhere (not in play area, discard, or other hands).
+function buildUnknownPool(state: GameState, playerIndex: number): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const suit of SUITS) {
+    for (const rank of RANKS) {
+      counts.set(`${suit}-${rank}`, RANK_COPIES[rank]);
+    }
+  }
+  for (const suit of SUITS) {
+    for (let r = 1; r <= state.playArea[suit]; r++) {
+      const key = `${suit}-${r}`;
+      counts.set(key, counts.get(key)! - 1);
+    }
+  }
+  for (const card of state.discardPile) {
+    const key = `${card.suit}-${card.rank}`;
+    counts.set(key, counts.get(key)! - 1);
+  }
+  for (let i = 0; i < state.players.length; i++) {
+    if (i === playerIndex) continue;
+    for (const card of state.players[i].hand) {
+      const key = `${card.suit}-${card.rank}`;
+      counts.set(key, counts.get(key)! - 1);
+    }
+  }
+  return counts;
+}
+
+// For each card in the player's hand, compute the effective known suit/rank
+// by combining hint info with elimination deduction (when deck is empty).
+function deduceHand(state: GameState, playerIndex: number): DeducedCard[] {
+  const me = state.players[playerIndex];
+  const hand = me.hand;
+  const result: DeducedCard[] = [];
+
+  // If deck isn't empty, deduction isn't reliable — just use hint info
+  if (state.deck.length > 0) {
+    for (let i = 0; i < hand.length; i++) {
+      result.push({ suit: me.hintInfo.knownSuits[i], rank: me.hintInfo.knownRanks[i] });
+    }
+    return result;
+  }
+
+  // Build pool of unseen cards
+  const poolCounts = buildUnknownPool(state, playerIndex);
+
+  // For each hand slot, compute candidates consistent with hints
+  type CandidateKey = string; // "suit-rank"
+  const slotCandidates: CandidateKey[][] = [];
+
+  for (let i = 0; i < hand.length; i++) {
+    const ks = me.hintInfo.knownSuits[i];
+    const kr = me.hintInfo.knownRanks[i];
+    const candidates: CandidateKey[] = [];
+    for (const [key, count] of poolCounts) {
+      if (count <= 0) continue;
+      const [suit, rankStr] = key.split('-');
+      if (ks !== null && suit !== ks) continue;
+      if (kr !== null && Number(rankStr) !== kr) continue;
+      candidates.push(key);
+    }
+    slotCandidates.push(candidates);
+  }
+
+  // Iterative constraint propagation: if a slot has exactly one candidate,
+  // lock it in and remove that card from other slots' candidate lists.
+  // Repeat until no more progress.
+  const locked: (CandidateKey | null)[] = new Array(hand.length).fill(null);
+  const remainingCounts = new Map(poolCounts);
+
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (let i = 0; i < hand.length; i++) {
+      if (locked[i] !== null) continue;
+
+      // Filter candidates by remaining counts
+      const viable = slotCandidates[i].filter(key => (remainingCounts.get(key) ?? 0) > 0);
+      slotCandidates[i] = viable;
+
+      // Deduplicate: unique card identities
+      const uniqueCards = [...new Set(viable)];
+
+      if (uniqueCards.length === 1) {
+        // Fully deduced
+        locked[i] = uniqueCards[0];
+        remainingCounts.set(uniqueCards[0], (remainingCounts.get(uniqueCards[0]) ?? 1) - 1);
+        changed = true;
+      }
+    }
+  }
+
+  // Build result
+  for (let i = 0; i < hand.length; i++) {
+    const ks = me.hintInfo.knownSuits[i];
+    const kr = me.hintInfo.knownRanks[i];
+    if (locked[i] !== null) {
+      const [suit, rankStr] = locked[i]!.split('-');
+      result.push({ suit: suit as Suit, rank: Number(rankStr) as Rank });
+    } else {
+      result.push({ suit: ks, rank: kr });
+    }
+  }
+
+  return result;
 }
 
 function isKnownSafePlay(knownSuit: Suit | null, knownRank: Rank | null, state: GameState): boolean {
@@ -164,9 +280,13 @@ function isHintUseful(state: GameState, targetIdx: number, hint: HintValue): boo
 export function scoreAction(state: GameState, playerIndex: number, action: Action): ActionScore {
   const me = state.players[playerIndex];
 
+  // Use deduction (hint info + elimination when deck is empty) for effective knowledge
+  const deduced = deduceHand(state, playerIndex);
+
   if (action.type === 'PLAY_CARD') {
-    const knownSuit = me.hintInfo.knownSuits[action.cardIndex];
-    const knownRank = me.hintInfo.knownRanks[action.cardIndex];
+    const knownSuit = deduced[action.cardIndex].suit;
+    const knownRank = deduced[action.cardIndex].rank;
+    const isEndgame = state.turnsRemaining !== null;
 
     if (isKnownSafePlay(knownSuit, knownRank, state)) {
       const rank = knownRank!;
@@ -175,26 +295,28 @@ export function scoreAction(state: GameState, playerIndex: number, action: Actio
       return { tier: 'must', score: 60 - rank, reason: `Play known-safe ${knownSuit ?? ''} ${rank}` };
     }
 
-    if (state.turnsRemaining !== null && (knownSuit || knownRank)) {
-      return { tier: 'neutral', score: 10, reason: 'Endgame desperation play' };
-    }
-
     if (knownSuit && knownRank) {
       return { tier: 'bad', score: -100, reason: `Playing ${knownSuit} ${knownRank} would bomb` };
     }
 
-    // Partially known (suit or rank) — risky but not blind
+    // Partially known (suit or rank) — risky but acceptable in endgame
     if (knownSuit || knownRank) {
+      if (isEndgame) {
+        return { tier: 'neutral', score: 10, reason: `Endgame play (${knownSuit ?? '?'} ${knownRank ?? '?'})` };
+      }
       return { tier: 'bad', score: -30, reason: `Playing a partially known card (${knownSuit ?? '?'} ${knownRank ?? '?'}) is risky` };
     }
 
-    // Truly unknown — no info at all
+    // Truly unknown — acceptable gamble in endgame, too risky otherwise
+    if (isEndgame) {
+      return { tier: 'neutral', score: 5, reason: 'Endgame desperation play' };
+    }
     return { tier: 'bad', score: -200, reason: 'Playing a completely unknown card is too risky' };
   }
 
   if (action.type === 'DISCARD') {
-    const knownSuit = me.hintInfo.knownSuits[action.cardIndex];
-    const knownRank = me.hintInfo.knownRanks[action.cardIndex];
+    const knownSuit = deduced[action.cardIndex].suit;
+    const knownRank = deduced[action.cardIndex].rank;
 
     // Known 5 — never discard
     if (knownRank === 5) {
@@ -328,23 +450,10 @@ export async function chooseBotAction(state: GameState, playerIndex: number): Pr
 export function analyzeHumanAction(state: GameState, action: Action): string | null {
   const humanScore = scoreAction(state, action.playerIndex, action);
 
-  // Never warn on must-tier actions
-  if (humanScore.tier === 'must') return null;
-
-  const allScored = scoreAllActions(state, action.playerIndex);
-  const best = allScored[0]?.score;
-  if (!best) return null;
-
-  // Warn if action is 'bad'
+  // Only warn on clear blunders (bad-tier actions)
   if (humanScore.tier === 'bad') {
     return humanScore.reason;
   }
 
-  // Warn only if a 'must' was available (human is in strong/neutral at this point)
-  if (best.tier === 'must') {
-    return `${best.reason} was available as a higher-priority move.`;
-  }
-
-  // No warning for strong/neutral choices — both are valid
   return null;
 }

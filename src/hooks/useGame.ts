@@ -1,5 +1,6 @@
 import { useReducer, useEffect, useCallback } from 'react';
 import type { GameState, Action } from '../engine/types';
+import { INITIAL_FUSE_TOKENS } from '../engine/types';
 import { createGame, applyAction } from '../engine/game';
 import { chooseBotAction, analyzeHumanAction } from '../engine/ai';
 
@@ -30,7 +31,7 @@ const INITIAL_STATE: GameState = {
   playArea: { white: 0, yellow: 0, green: 0, blue: 0, red: 0 },
   discardPile: [],
   infoTokens: 8,
-  fuseTokens: 1,
+  fuseTokens: INITIAL_FUSE_TOKENS,
   currentPlayerIndex: 0,
   turnsRemaining: null,
   status: 'setup',

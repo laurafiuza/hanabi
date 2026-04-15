@@ -203,7 +203,9 @@ export function applyAction(state: GameState, action: Action): GameState {
 
   // Handle deck exhaustion / end-game countdown
   if (deck.length === 0 && newState.turnsRemaining === null) {
-    newState.turnsRemaining = NUM_PLAYERS;
+    // Each player gets exactly one more turn after deck empties.
+    // +1 because we decrement immediately below on this same turn.
+    newState.turnsRemaining = NUM_PLAYERS + 1;
   }
 
   if (newState.turnsRemaining !== null) {

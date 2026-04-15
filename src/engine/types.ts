@@ -70,7 +70,7 @@ export interface GameState {
 }
 
 export const MAX_INFO_TOKENS = 8;
-export const INITIAL_FUSE_TOKENS = 1;
+export const INITIAL_FUSE_TOKENS = 3;
 export const HAND_SIZE = 4; // 4 cards for 4-5 players
 export const NUM_PLAYERS = 5;
 

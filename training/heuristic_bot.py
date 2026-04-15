@@ -90,6 +90,82 @@ def is_known_safe_play(ks, kr, state):
     return False
 
 
+def _build_unknown_pool(state, player_idx):
+    """Build counts of cards not visible (not in play area, discard, or other hands)."""
+    counts = {}
+    for suit in range(SUIT_COUNT):
+        for rank in range(1, 6):
+            counts[(suit, rank)] = RANK_COPIES[rank]
+    for suit in range(SUIT_COUNT):
+        for r in range(1, state['play_area'][suit] + 1):
+            counts[(suit, r)] -= 1
+    for card in state['discard_pile']:
+        counts[(card['suit'], card['rank'])] -= 1
+    for i, p in enumerate(state['players']):
+        if i == player_idx:
+            continue
+        for card in p['hand']:
+            counts[(card['suit'], card['rank'])] -= 1
+    return counts
+
+
+def deduce_hand(state, player_idx):
+    """Return list of (suit_or_None, rank_or_None) for each card in hand.
+    Uses hint info + elimination deduction when deck is empty."""
+    me = state['players'][player_idx]
+    hand = me['hand']
+    n = len(hand)
+
+    # If deck isn't empty, just use hint info
+    if state['deck']:
+        return [(me['hint_info']['known_suits'][i], me['hint_info']['known_ranks'][i])
+                for i in range(n)]
+
+    pool = _build_unknown_pool(state, player_idx)
+
+    # For each slot, compute candidate cards consistent with hints
+    slot_candidates = []
+    for i in range(n):
+        ks = me['hint_info']['known_suits'][i]
+        kr = me['hint_info']['known_ranks'][i]
+        cands = []
+        for (suit, rank), count in pool.items():
+            if count <= 0:
+                continue
+            if ks is not None and suit != ks:
+                continue
+            if kr is not None and rank != kr:
+                continue
+            cands.append((suit, rank))
+        slot_candidates.append(cands)
+
+    # Iterative constraint propagation
+    locked = [None] * n
+    remaining = dict(pool)
+
+    changed = True
+    while changed:
+        changed = False
+        for i in range(n):
+            if locked[i] is not None:
+                continue
+            viable = [c for c in slot_candidates[i] if remaining.get(c, 0) > 0]
+            slot_candidates[i] = viable
+            unique = list(set(viable))
+            if len(unique) == 1:
+                locked[i] = unique[0]
+                remaining[unique[0]] = remaining.get(unique[0], 1) - 1
+                changed = True
+
+    result = []
+    for i in range(n):
+        if locked[i] is not None:
+            result.append(locked[i])
+        else:
+            result.append((me['hint_info']['known_suits'][i], me['hint_info']['known_ranks'][i]))
+    return result
+
+
 def hint_new_info_count(target, hint):
     count = 0
     for i, card in enumerate(target['hand']):
@@ -176,33 +252,33 @@ def is_hint_useful(state, target_idx, hint):
 def score_action(state, player_idx, action):
     """Returns (tier, score) for an action."""
     me = state['players'][player_idx]
+    deduced = deduce_hand(state, player_idx)
 
     if action['type'] == 'play':
         idx = action['card_idx']
-        ks = me['hint_info']['known_suits'][idx]
-        kr = me['hint_info']['known_ranks'][idx]
+        ks, kr = deduced[idx]
+        is_endgame = state['turns_remaining'] is not None
 
         if is_known_safe_play(ks, kr, state):
-            # Plays are must-tier but score below critical saves (which start at 80+).
             return ('must', 60 - kr)
-
-        if state['turns_remaining'] is not None and (ks is not None or kr is not None):
-            return ('neutral', 10)
 
         if ks is not None and kr is not None:
             return ('bad', -100)
 
-        # Partially known (suit or rank) — risky but not blind
+        # Partially known — risky but acceptable in endgame
         if ks is not None or kr is not None:
+            if is_endgame:
+                return ('neutral', 10)
             return ('bad', -30)
 
-        # Truly unknown — no info at all
+        # Truly unknown — acceptable gamble in endgame, too risky otherwise
+        if is_endgame:
+            return ('neutral', 5)
         return ('bad', -200)
 
     if action['type'] == 'discard':
         idx = action['card_idx']
-        ks = me['hint_info']['known_suits'][idx]
-        kr = me['hint_info']['known_ranks'][idx]
+        ks, kr = deduced[idx]
 
         if kr == 5:
             return ('bad', -50)

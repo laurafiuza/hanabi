@@ -1,53 +1,137 @@
-.banner {
+.overlay {
   position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
+  inset: 0;
   z-index: 200;
-  background: linear-gradient(135deg, #1e1e2e 0%, #2a2a4a 100%);
-  border-bottom: 2px solid #ffd700;
-  padding: 12px 24px;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
-}
-
-.bannerContent {
   display: flex;
   align-items: center;
   justify-content: center;
+  background: rgba(10, 10, 20, 0.7);
+  animation: fadeIn 0.6s ease-out;
+  cursor: pointer;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.fireworks {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 300;
+}
+
+.card {
+  position: relative;
+  z-index: 202;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
   gap: 16px;
-  flex-wrap: wrap;
+  padding: 40px 56px;
+  background: linear-gradient(135deg, #1e1e2e 0%, #2a2a4a 100%);
+  border: 1px solid rgba(255, 215, 0, 0.3);
+  border-radius: 16px;
+  box-shadow: 0 8px 40px rgba(0, 0, 0, 0.6), 0 0 60px rgba(255, 215, 0, 0.08);
+  animation: slideUp 0.5s ease-out;
+  text-align: center;
+  cursor: default;
+}
+
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(30px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.dismiss {
+  position: absolute;
+  top: 8px;
+  right: 12px;
+  background: none;
+  border: none;
+  color: #666;
+  font-size: 24px;
+  cursor: pointer;
+  padding: 0 4px;
+  line-height: 1;
+  transition: color 0.15s;
+}
+
+.dismiss:hover {
+  color: #aaa;
 }
 
 .title {
-  font-size: 20px;
+  font-size: 28px;
   font-weight: bold;
   color: #ffd700;
 }
 
-.subtitle {
-  color: #aaa;
-  font-size: 14px;
-  max-width: 400px;
+.scoreDisplay {
+  display: flex;
+  align-items: baseline;
+  gap: 2px;
 }
 
-.score {
-  font-size: 20px;
+.scoreNum {
+  font-size: 56px;
   font-weight: bold;
-  color: #ddd;
+  color: #fff;
+  line-height: 1;
+}
+
+.scoreMax {
+  font-size: 24px;
+  color: #666;
+  font-weight: normal;
+}
+
+.impression {
+  color: #bbb;
+  font-size: 15px;
+  font-style: italic;
+  max-width: 360px;
+  line-height: 1.5;
 }
 
 .btn {
-  padding: 8px 20px;
+  margin-top: 8px;
+  padding: 10px 28px;
   border: 1px solid #555;
   border-radius: 8px;
   background: #3a3a5a;
   color: #ddd;
   cursor: pointer;
-  font-size: 14px;
+  font-size: 15px;
   transition: background 0.15s;
-  white-space: nowrap;
 }
 
 .btn:hover {
   background: #4a4a6a;
+}
+
+/* Floating bar shown after dismissing the modal */
+.floatingBar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  padding: 10px 24px;
+  background: linear-gradient(135deg, #1e1e2e 0%, #2a2a4a 100%);
+  border-bottom: 2px solid #ffd700;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+}
+
+.floatingScore {
+  font-size: 15px;
+  font-weight: 500;
+  color: #ffd700;
 }

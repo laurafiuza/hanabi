@@ -92,19 +92,6 @@ def _apply_hint(player, hint):
             player['hint_info']['card_ages'][i] = 0
 
 
-def _check_unwinnable(state):
-    for suit_idx in range(5):
-        needed = state['play_area'][suit_idx] + 1
-        if needed > 5:
-            continue
-        for rank in range(needed, 6):
-            total = RANK_COPIES[rank]
-            discarded = sum(1 for c in state['discard_pile']
-                           if c['suit'] == suit_idx and c['rank'] == rank)
-            if discarded >= total:
-                return True
-    return False
-
 
 def is_valid_action(state, action):
     if state['status'] != 'playing':
@@ -199,10 +186,6 @@ def apply_action(state, action):
             state['status'] = 'lost'
             return state
 
-        if not success and _check_unwinnable(state):
-            state['status'] = 'lost'
-            return state
-
         if get_score(state) == 25:
             state['status'] = 'won'
             return state
@@ -220,9 +203,6 @@ def apply_action(state, action):
             player['hand'].append(state['deck'].pop(0))
             _add_card_to_hints(player['hint_info'])
 
-        if _check_unwinnable(state):
-            state['status'] = 'lost'
-            return state
 
     elif atype == 'hint':
         _apply_hint(state['players'][action['target']], action['hint'])

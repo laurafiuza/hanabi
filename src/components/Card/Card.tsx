@@ -14,7 +14,7 @@ interface CardProps {
   onClick?: () => void;
 }
 
-const CHOP_TOOLTIP = 'The chop is the oldest unclued card — the one that would be discarded next. Protect it if it holds a critical card!';
+const CHOP_TOOLTIP = 'The chop is the oldest unclued card. If the player decides to discard a card, they should probably discard this one.';
 
 export function Card({ card, faceUp, knownSuit, knownRank, cardAge, isChop, selected, highlighted, onClick }: CardProps) {
   const ageTooltip = cardAge != null ? `Age: ${cardAge} turn${cardAge === 1 ? '' : 's'} since drawn or last clued.` : '';

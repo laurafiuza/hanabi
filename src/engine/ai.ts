@@ -448,11 +448,25 @@ export async function chooseBotAction(state: GameState, playerIndex: number): Pr
 // ---------------------------------------------------------------------------
 
 export function analyzeHumanAction(state: GameState, action: Action): string | null {
-  const humanScore = scoreAction(state, action.playerIndex, action);
+  const deduced = deduceHand(state, action.playerIndex);
 
-  // Only warn on clear blunders (bad-tier actions)
-  if (humanScore.tier === 'bad') {
-    return humanScore.reason;
+  // Blunder: playing a card you know is not playable (guaranteed bomb)
+  if (action.type === 'PLAY_CARD') {
+    const { suit, rank } = deduced[action.cardIndex];
+    if (suit && rank && state.playArea[suit] !== rank - 1) {
+      return `You played ${suit} ${rank} but that suit needs a ${state.playArea[suit] + 1}.`;
+    }
+  }
+
+  // Blunder: discarding a known-playable or known-critical card
+  if (action.type === 'DISCARD') {
+    const { suit, rank } = deduced[action.cardIndex];
+    if (suit && rank && isCardPlayable(suit, rank, state)) {
+      return `You discarded ${suit} ${rank} but it was playable right now.`;
+    }
+    if (suit && rank && isCritical({ suit, rank, id: '' }, state)) {
+      return `You discarded ${suit} ${rank} — the last copy of a needed card.`;
+    }
   }
 
   return null;
